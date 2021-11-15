@@ -42,7 +42,7 @@ use Carp qw(croak);
 ## }
 ## Body (enable): -- This is the boilermodule id.
 ## {
-##      "zone": "9c45b124-eedf-4310-bb66-d367e929d8d3"
+##      "zone": "<id>"
 ## }
 
 ## Heating - Ready by
@@ -97,6 +97,13 @@ sub new        # constructor, this method makes an object that belongs to class 
     $self->{client}->setHost('https://beekeeper-uk.hivehome.com:443/1.0/');
 
     return $self;        # a constructor always returns an blessed() object
+}
+
+sub DESTROY($)
+{
+    my $self = shift;
+
+    $self->_log(5, "DESTROY - Enter");
 }
 
 # Attribute accessor method.
@@ -297,6 +304,7 @@ sub _getHeaders($$)
     my $headers = {
                 'Content-Type' => 'application/json'
             ,   'Accept' => 'application/json'
+            ,   'Connection' => 'keep-alive'
     };
 
     if (defined($token))
