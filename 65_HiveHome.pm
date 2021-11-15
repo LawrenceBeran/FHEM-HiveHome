@@ -10,14 +10,27 @@ use Data::Dumper;
 use List::Util qw(first);
 
 # DEFINE myHiveHome HiveHome <username> <password>
+my $hiveHomeClient = undef;
 
+sub _getHiveHomeInterface($)
+{
+	my ($hash) = @_;
+
+    if (!defined($hash->{HIVEHOME}{interface})) {
+       	Log(3, "_getHiveHomeInterface: Creating new HiveHomeInterface object!");
+
+        $hash->{HIVEHOME}{interface} = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
+                                            token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
+                                            accessToken => $hash->{HIVEHOME}{accessToken});
+    }
+    return $hash->{HIVEHOME}{interface};
+}
 
 sub HiveHome_Initialize
 {
 	my ($hash) = @_;
 
 	Log(5, "HiveHome_Initialize: enter");
-
 
 	# Provider
 	$hash->{Clients}  = "HiveHome_.*";
@@ -33,6 +46,9 @@ sub HiveHome_Initialize
 	$hash->{DefFn}    = "HiveHome_Define";
 	$hash->{UndefFn}  = "HiveHome_Undefine";
 	
+    $hash->{HIVEHOME}{client} = undef;
+    $hash->{helper}->{sendQueue} = [];
+
 	Log(5, "HiveHome_Initialize: exit");
 	return undef;	
 }
@@ -83,11 +99,10 @@ sub HiveHome_Undefine($$)
 	RemoveInternalTimer($hash);
 
 	# Close the HIVE session 
-    my $hiveHomeClient = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
-                                        token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-                                        accessToken => $hash->{HIVEHOME}{accessToken});
-
-	$hiveHomeClient->logout();
+#    my $hiveHomeClient = _getHiveHomeInterface($hash);
+#    if (defined($hiveHomeClient)) {
+#    	$hiveHomeClient->logout();
+#    }
 	$hash->{HIVEHOME}{SessionId} = undef;
 
 	Log(5, "HiveHome_Undefine: exit");
@@ -122,12 +137,8 @@ sub HiveHome_UpdateNodes()
 
 	my $presence = "ABSENT";
 
-    my $hiveHomeClient = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
-                                        token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-                                        accessToken => $hash->{HIVEHOME}{accessToken});
-
-
-    if (!defined($hiveHomeClient->getToken()))
+    my $hiveHomeClient = _getHiveHomeInterface($hash);
+    if (!defined($hiveHomeClient) || !defined($hiveHomeClient->getToken()))
     {
 		Log(1, "HiveHome_UpdateNodes: ".$hash->{username}." failed to logon to Hive");
 		$hash->{STATE} = 'Disconnected';
@@ -875,6 +886,247 @@ sub HiveHome_Write_Product($$$$@)
     return $ret;
 }
 
+sub _verifyWriteActionCommandArgs($$$$)
+{
+    my ($hash, $shash, $cmd, @args) = @_;
+
+    Log(5, "_verifyWriteActionCommandArgs: enter");
+
+    my $ret = undef;
+
+    if (lc($cmd) ne lc('activate'))
+	{
+		$ret = "unknown argument ${cmd} choose one of activate:noArg";
+	}
+
+    Log(5, "_verifyWriteActionCommandArgs: exit");
+
+    return $ret;
+}
+
+sub _verifyWriteProductCommandArgs($$$$)
+{
+    my ($hash, $shash, $cmd, @args) = @_;
+
+    Log(5, "_verifyWriteProductCommandArgs: enter");
+
+    my $ret = undef;
+
+
+	# For product types of: heating, hotwater, trvcontrol
+	$cmd = (lc($cmd) eq 'auto') ? 'schedule' : lc($cmd);
+	
+    if (!defined($shash->{productType})) 
+    {
+        Log(1, "_verifyWriteProductCommandArgs - productType not defined for ".$shash->{NAME});
+    } 
+    else 
+    {
+        if ($cmd eq 'weekprofile')
+        {
+            my $weekString = join(" ", @args);
+
+            # Get the components heating offset.
+            my $tempOffset = AttrVal($shash->{NAME}, 'temperatureOffset', 0);
+
+            my $weekProfile = HiveHome_ParseWeekCmdString($weekString, $tempOffset);
+            if (!defined($weekProfile))
+            {
+                $ret = "invalid weekprofile value - ".$weekProfile;
+                Log(3, "_verifyWriteProductCommandArgs(${cmd}): Invalid command argument - ".$weekString);
+            }
+        }
+        elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'holidaymode'))
+        {
+            # Three params
+            #   args[0] = start date/time
+            #   args[1] = end date/time
+            #   args[2] = temp
+            # Date/times in the format of YYYY-MM-DDTHH:MM
+
+            if (!$args[0] || !$args[1] || !$args[2])
+            {
+                $ret = "holidaymode requires three parameters; start datetime, end datetime and temperature";
+            }
+        }
+        elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'cancelholidaymode'))
+        {
+        }
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'name'))
+        {
+            if (!$args[0])
+            {
+                $ret = "invalid value '${args[0]}', must contain a name";
+            }
+        }
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'calibrate'))
+        {
+            if ($args[0])
+            {
+                if (lc($args[0]) ne 'start' && lc($args[0]) ne 'stop')
+                {
+                    $ret = "invalid value '${args[0]}', must be either start or stop";
+                }
+            }
+            else
+            {
+                $ret = "missing argument value, must be either start or stop";
+            }
+        }
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'valveposition'))
+        {
+            if (!$args[0])
+            {
+                $ret = "missing argument value, must be either horizontal or vertical";
+            }
+        }
+        elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol'))
+        {
+            if ($cmd eq 'desiredtemperature')
+            {
+                # If the command is 'desiredTemperature' then the first argument can be translated into the command or a temperature for manual.
+                if (HiveHome_IsValidTemperature($cmd))
+                {
+                    $args[0] = $cmd;
+                    $cmd = 'manual';
+                }
+                else
+                {
+                    $cmd = $args[0];
+                }
+            }
+
+            # Can have arguments of:
+            #	SCHEDULE, MANUAL, OFF, BOOST
+            if (($cmd eq 'schedule') or ($cmd eq 'off'))
+            {
+                # No args for these commands.
+            }
+            elsif ($cmd eq 'boost') 
+            {
+                # BOOST can be provided with or without parameters
+                #       If no parameters then it will use the internals boostTemperature and boostDuration
+                
+                if (!defined($args[0]) || $args[0] eq '')
+                { }
+                elsif (!HiveHome_IsValidTemperature($args[0]))
+                {
+                    $ret = "invalid value '${args[0]}', must be a temperature value";
+                }
+                elsif (!HiveHome_IsValidNumber($args[1]))
+                {
+                    $ret = "invalid value '${args[1]}', must be a time in mins";
+                }
+            }
+            elsif (($cmd eq 'manual') or ($cmd eq 'scheduleoverride'))
+            {
+                # MANUAL and SCHEDULEOVERRIDE next arg is temperature.
+                # 		Can we get devices minimum and maximum temperature from device details
+                #		and only allow whole or half decimal places			
+
+                if (!HiveHome_IsValidTemperature($args[0]))
+                {
+                    $ret = "invalid value '${args[0]}', must be a temperature value";
+                }
+            }
+            elsif ($cmd eq 'advanceschedule')
+            { }
+            elsif (lc($shash->{productType}) eq 'heating')
+            {
+                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+                my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
+
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile holidaymode cancelholidaymode:noArg advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} ";
+            }
+            else
+            {
+                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+                my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
+
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical ";
+            }
+        }
+        elsif (lc($shash->{productType}) eq 'hotwater')
+        {
+            # Can have arguments of:
+            #	SCHEDULE, ON, OFF, BOOST
+
+            if (($cmd eq 'schedule') or ($cmd eq 'off') or ($cmd eq 'on'))
+            {
+            }
+            elsif ($cmd eq 'boost')
+            {
+                # Verify duration is a number...
+                if (!HiveHome_IsValidNumber($args[0]))
+                {
+                    $ret = "invalid value '${args[0]}', must be a time in mins";
+                }
+            }
+            else
+            {
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg on:noArg boost:slider,15,15,420 weekprofile";
+            }
+        }
+        else
+        {
+            Log(2, "HiveHome_Write_Product(${cmd}): Unkown product type: ".$shash->{productType});
+            $ret = "unknown productType ".$shash->{productType}; 
+        }
+    }
+
+
+
+    Log(5, "_verifyWriteProductCommandArgs: exit");
+
+    return $ret;
+}
+
+sub _verifyWriteDeviceCommandArgs($$$$)
+{
+    my ($hash, $hiveHomeClient, $shash, $cmd, @args) = @_;
+
+    Log(5, "_verifyWriteDeviceCommandArgs: enter");
+
+    my $ret = undef;
+
+    if (lc($cmd) eq lc('name'))
+    {
+        if (!$args[0])
+        {
+            $ret = "name expects a single argument!";
+        }
+    }
+	else
+	{
+		$ret = "unknown argument ${cmd} choose one of name ";
+	}
+
+    Log(5, "_verifyWriteDeviceCommandArgs: exit");
+
+    return $ret;
+}
+
+sub _verifyWriteCommandArgs($$$$)
+{
+    my ($hash, $shash, $cmd, @args) = @_;
+
+    my $ret = undef;
+
+    if (lc($shash->{TYPE}) eq lc('HiveHome_Action'))
+    {
+        $ret = _verifyWriteActionCommandArgs($hash, $shash, $cmd, @args);
+    }
+    elsif (lc($shash->{TYPE}) eq lc('HiveHome_Product'))
+    {
+        $ret = _verifyWriteProductCommandArgs($hash, $shash, $cmd, @args);
+    }
+    elsif (lc($shash->{TYPE}) eq lc('HiveHome_Device'))
+    {
+        $ret = _verifyWriteDeviceCommandArgs($hash, $shash, $cmd, @args);
+    }
+
+    return $ret;
+}
 
 sub HiveHome_Write($$$)
 {
@@ -887,19 +1139,48 @@ sub HiveHome_Write($$$)
     my $name = $shash->{NAME};
 
     Log(5, "HiveHome_Write: enter");
-    Log(4, "HiveHome_Write: ${name} ${cmd}");
+    Log(4, "HiveHome_Write: ${name} ${cmd} ".int(@args));
 
     my $ret = undef;
 
-#	my ($type, $action, $args) = split(",", $msg, 3);
+    if ($cmd eq "?") {
+        $ret = _verifyWriteCommandArgs($hash, $shash, $cmd, @args);
+    } else {
+        # Push the command onto the queue.
+        my $args = {
+                      "hash"  => $hash
+                    , "shash" => $shash
+                    , "cmd"   => $cmd
+                    , "args"  => \@args
+                };
 
+        # TODO: How to report badly formated commands if we are offloading the request to the background?
 
-    my $hiveHomeClient = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
-                                        token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-                                        accessToken => $hash->{HIVEHOME}{accessToken});
-    if (!defined($hiveHomeClient->getToken()))
+        push( @{$hash->{helper}->{sendQueue}}, $args);
+        Log(4, "HiveHome_Write: Adding item to queue: ".int(@{$hash->{helper}->{sendQueue}}));
+        _writeSendNonBlocking($hash);
+    }
+
+    Log(5, "HiveHome_Write: exit");
+
+    return $ret;
+}
+
+sub HiveHome_ctrl_Write($$$@)
+{
+    my ($hash, $shash, $cmd, @args) = @_;
+
+    my $ret = undef;
+
+    my $name = $shash->{NAME};
+
+    Log(5, "HiveHome_ctrl_Write: enter");
+    Log(4, "HiveHome_ctrl_Write: ${name} ${cmd} ".int(@args));
+
+    my $hiveHomeClient = _getHiveHomeInterface($hash);
+    if (!defined($hiveHomeClient) || !defined($hiveHomeClient->getToken()))
     {
-		Log(1, "HiveHome_Write: ".$hash->{username}." failed to logon to Hive");
+		Log(1, "HiveHome_ctrl_Write: ".$hash->{username}." failed to logon to Hive");
 		$hash->{STATE} = 'Disconnected';
 	} 
 	else 
@@ -907,7 +1188,7 @@ sub HiveHome_Write($$$)
         # Determine the source of the message; Device, Product or Action
         #   First parameter of $msg
 
-		Log(4, "HiveHome_Write: ".$hash->{username}." succesfully connected to Hive");
+		Log(4, "HiveHome_ctrl_Write: ".$hash->{username}." succesfully connected to Hive");
 
         if (lc($shash->{TYPE}) eq lc('HiveHome_Action'))
         {
@@ -937,9 +1218,79 @@ sub HiveHome_Write($$$)
         }
     }
 
-    Log(5, "HiveHome_Write: exit");
+    Log(5, "HiveHome_ctrl_Write: exit");
 
     return $ret;
+}
+
+sub _writeSend($)
+{
+    my $data = shift;
+
+    Log(5, "_writeSend: enter");
+
+    Log(4, "_writeSend: ".$data->{hash}->{NAME}." ".$data->{shash}->{NAME}." ".$data->{cmd}." ".int(@{$data->{args}}));
+
+    my $ret = HiveHome_ctrl_Write($data->{hash}, $data->{shash}, $data->{cmd}, @{$data->{args}});
+
+    my $resp;
+    $resp = "1" if (defined($ret));
+    $resp = "0" if (!defined($ret));
+
+    Log(5, "_writeSend: exit");
+
+    return $data->{hash}->{NAME}."|${resp}";
+}
+
+sub _writeSendDone($)
+{
+    my ($string) = @_;
+    my ($me, $ok) = split("\\|", $string);
+    my $hash = $defs{$me};
+  
+    Log(4, "$me(_writeSendDone): message successfully send") if ($ok);
+    Log(4, "$me(_writeSendDone): sending message failed") if (!$ok);
+  
+    delete($hash->{helper}{RUNNING_PID});
+}
+
+sub _writeSendAbort($)
+{
+    my $hash = shift;
+
+    Log(2, "_writeSendAbort: Error. sending aborted.");
+
+    delete($hash->{helper}{RUNNING_PID});
+}
+
+sub _writeSendNonBlocking($)
+{
+    my $hash = shift;
+    my $me = $hash->{NAME};
+
+    Log(5, "_writeSendNonBlocking: enter");
+
+    RemoveInternalTimer($hash, "_writeSendNonBlocking");
+
+    my $queueSize = int(@{$hash->{helper}->{sendQueue}});
+    Log(4, "_writeSendNonBlocking: Queue size: ${queueSize}");
+
+    return if ($queueSize <= 0); #nothing to do
+
+    # This is suspect logic which can cause race conditions! What synchronisation tools exist within Perl?
+    if (!exists($hash->{helper}{RUNNING_PID})) {
+        my $data = shift(@{$hash->{helper}->{sendQueue}});
+
+        $hash->{helper}{RUNNING_PID} = BlockingCall("_writeSend", $data, "_writeSendDone", 15, "_writeSendAbort", $hash);
+
+    } else {
+        Log(4, "_writeSendNonBlocking: Blocking call running - will try again later");
+    }
+
+    $queueSize = int(@{$hash->{helper}->{sendQueue}});
+    InternalTimer(gettimeofday()+5, "_writeSendNonBlocking", $hash, 0) if ($queueSize > 0);
+
+    Log(5, "_writeSendNonBlocking: exit");
 }
 
 
