@@ -100,7 +100,10 @@ sub HiveHome_Product_Define($$)
 
 		# Only interested in events from the "global" device for now.
 		$hash->{NOTIFYDEV}	= "global";
-		if (defined($hash->{productType}) && lc($hash->{productType}) eq "trvcontrol")
+
+		# See the earlier comment about screwed up logic.
+		# Is there a better way to correctly set this up?
+#		if (defined($hash->{productType}) && lc($hash->{productType}) eq "trvcontrol")
 		{
 			$hash->{NOTIFYDEV}	.= ",i:TYPE=HiveHome_Product:FILTER=i:productType=heating";
 		}
@@ -523,8 +526,14 @@ sub HiveHome_Product_Notify($$)
 	#		When the heating reverts back to its original heating mode, the trvs must also revert back to their previous mode.
 	#			trvs and heating store the previous heating mode in:  props->Previous 
 
-	if (lc($dev_hash->{TYPE}) eq "hivehome_product" && lc($dev_hash->{productType} eq "heating"))
+	if (	(lc($dev_hash->{TYPE}) eq "hivehome_product" && lc($dev_hash->{productType} eq "heating"))
+		&& 	(lc($own_hash->{TYPE}) eq "hivehome_product" && lc($own_hash->{productType} eq "trvcontrol")))
 	{
+		my $devFriendlyName = $dev_hash->{name};
+		my $ownFriendlyName = $own_hash->{name};
+
+		Log(4, "HiveHome_Product_Notify($ownFriendlyName): - ${devFriendlyName}");
+
 		# If the TRV is in the same zone as the heating product
 		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
 		{
@@ -534,38 +543,40 @@ sub HiveHome_Product_Notify($$)
 				$event = "" if(!defined($event));
 
 				my ($name, $value) = split(": ", $event, 2);
-				Log(4, "HiveHome_Product_Notify(${ownName}): Event - ${name} Value - ".toString($value));
+				Log(5, "HiveHome_Product_Notify(${ownName}): Event - ${name} Value - ".toString($value));
 
 				# Heating mode has changed
 				if (lc($name) eq 'mode' && defined($value))
 				{
-					# TODO: should we check with HEATING_OVERRIDE Attr before calling this?
-
-
-					# The heating has been boosted!
-					if (lc($value) eq 'boost')
+					my $heatingOverride = AttrVal($name, 'HEATING_OVERRIDE', undef);
+					if (defined($heatingOverride) && lc($heatingOverride) eq 'yes')
 					{
-						Log(4, "HiveHome_Product_Notify(${ownName}): set ${ownName} boost ". ReadingsVal($devName, 'target', 21).' '.InternalNum($devName, 'boost', 30));
-						# TODO: should we check the HEATING_OVERRIDE Attr before calling this?
-						fhem("set ${ownName} boost ". ReadingsVal($devName, 'target', 21).' '.InternalNum($devName, 'boost', 30));
+						Log(4, "HiveHome_Product_Notify(${ownName}): HEATING_OVERRIDE attribute set, not changing its heating mode!");
 					}
 					else
 					{
-						# What is my current mode? If I am boost, then return to schedule
-						my $myMode = lc(ReadingsVal($ownName, 'mode', ''));
-						if ($myMode eq 'boost')
+						# The heating has been boosted!
+						if (lc($value) eq 'boost')
 						{
-							my $cmd = "set ${ownName} ".InternalVal($ownName, 'previousMode', 'schedule');
-
+							my $cmd = "set ${ownName} boost ". ReadingsVal($devName, 'target', 21).' '.InternalNum($devName, 'boost', 30);
 							Log(4, "HiveHome_Product_Notify(${ownName}): ${cmd}");
 							fhem($cmd);
 						}
+						else
+						{
+							# What is my current mode? If I am boost, then return to schedule
+							my $myMode = lc(ReadingsVal($ownName, 'mode', ''));
+							if ($myMode eq 'boost')
+							{
+								my $cmd = "set ${ownName} ".InternalVal($ownName, 'previousMode', 'schedule');
+								Log(4, "HiveHome_Product_Notify(${ownName}): ${cmd}");
+								fhem($cmd);
+							}
+						}
+						#### TODO
+						## After calling fhem we should force parse to refresh the UI with the change.
 					}
-
-					#### TODO
-					## After calling fhem we should force parse to refresh the UI with the change.
 				}
-
 			}
 		}
 	}
