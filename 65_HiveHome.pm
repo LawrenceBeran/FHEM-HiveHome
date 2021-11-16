@@ -492,7 +492,7 @@ sub HiveHome_ParseWeekCmdString($$)
                 Log(3, "HiveHome_ParseWeekCmdString: Offset days temperature offset values - ".$array[$day+1]);
             }
 
-            $weekHash->{$dayHash{lc($array[$day])}} = $array[$day+1];
+            $weekHash->{$dayHash{lc($array[$day])}} = HiveHomeInterface::_trim($array[$day+1]);
         }
     }
 
@@ -645,6 +645,9 @@ sub HiveHome_Write_Product($$$$@)
         if ($cmd eq 'weekprofile')
         {
             my $weekString = join(" ", @args);
+            # Remove redundant '.0' elements from temperatures.
+            $weekString =~ s/[.]0//ig;
+
             Log(4, "HiveHome_Write_Product(${cmd}): WeekProfile - ".$weekString);
 
             # Get the components heating offset.
@@ -659,6 +662,7 @@ sub HiveHome_Write_Product($$$$@)
             else
             {
                 my $weekProfileCmdString = undef;
+                my $different = undef;
                 my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
                 foreach my $day (@daysofweek) 
                 {
@@ -666,12 +670,28 @@ sub HiveHome_Write_Product($$$$@)
                     {
                         $weekProfile->{$day} = HiveHome_ConvertUIDayProfileStringToCmdString($shash->{"WeekProfile_".$day});
                     }
+                    else
+                    {
+                        my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($shash->{"WeekProfile_".$day});
+                        $dayProfile =~ s/[.]0//ig;
+
+                        if (lc($dayProfile) eq lc($weekProfile->{$day})) {
+                            Log(1, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") matches current - ".$dayProfile);
+                        }
+                        else {
+                            Log(1, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
+                            $different = 1;
+                        }
+                    }
                     $weekProfileCmdString .= $day.' '.$weekProfile->{$day}.' ';
                 }
 
-                Log(4, "HiveHome_Write_Product(${cmd}): Complete WeekProfile - ".$weekProfileCmdString);
-
-                my $resp = $hiveHomeClient->_setSchedule(lc($shash->{productType}), $shash->{id}, $weekProfileCmdString);
+                if (defined($different)) {
+                    Log(4, "HiveHome_Write_Product(${cmd}): Complete WeekProfile - ".$weekProfileCmdString);
+                    my $resp = $hiveHomeClient->_setSchedule(lc($shash->{productType}), $shash->{id}, $weekProfileCmdString);
+                } else {
+                    Log(4, "HiveHome_Write_Product(${cmd}): WeekProfile not changed from current - ".$weekProfileCmdString);
+                }
             }
         }
         elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'holidaymode'))
@@ -1288,7 +1308,7 @@ sub _writeSendNonBlocking($)
     }
 
     $queueSize = int(@{$hash->{helper}->{sendQueue}});
-    InternalTimer(gettimeofday()+5, "_writeSendNonBlocking", $hash, 0) if ($queueSize > 0);
+    InternalTimer(gettimeofday()+0.5, "_writeSendNonBlocking", $hash, 0) if ($queueSize > 0);
 
     Log(5, "_writeSendNonBlocking: exit");
 }
