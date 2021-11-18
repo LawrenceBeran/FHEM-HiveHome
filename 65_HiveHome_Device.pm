@@ -41,8 +41,14 @@ sub HiveHome_Device_Define
 
 	Log(5, "HiveHome_Device_Define: enter");
 
-	my ($name, $type, $hiveType, $id) = split("[ \t][ \t]*", $def);
+	my ($name, $hiveType, $id, $deviceType) = split("[ \t][ \t]*", $def);
 	$id = lc($id); # nomalise id
+
+	if (!defined($deviceType) or !exists($deviceTypeIcons{lc($deviceType)})) {
+		my $msg = "HiveHome_Device_Define: missing or invalid device type argument missing. It must be one of; boilermodule, thermostatui, trv, hub.";
+		Log(1, $msg);
+		return $msg;
+	}
 
 	if (exists($modules{HiveHome_Device}{defptr}{$id})) 
 	{
@@ -54,6 +60,7 @@ sub HiveHome_Device_Define
 	Log(4, "HiveHome_Device_Define id $id ");
 	$hash->{id} 	= $id;
 	$hash->{STATE} = 'Disconnected';
+	$hash->{deviceType} = $deviceType;
 	
 	$modules{HiveHome_Device}{defptr}{$id} = $hash;
 
@@ -87,9 +94,9 @@ sub HiveHome_Device_Define
 			HiveHome_Device_SetAlias($hash, $name);
 
 			# Show an icon representative of the devices type...
-			if ($deviceTypeIcons{lc($hash->{deviceType})})
+			if ($deviceTypeIcons{lc($deviceType)})
 			{
-	        	$attr{$name}{icon} = $deviceTypeIcons{lc($hash->{deviceType})};
+	        	$attr{$name}{icon} = $deviceTypeIcons{lc($deviceType)};
 			} 
 			else 
 			{
@@ -207,21 +214,25 @@ sub HiveHome_Device_Parse
 
 	Log(5, "HiveHome_Device_Parse: enter");
 
+	# Convert the node details back to JSON.
+	my $node = decode_json($nodeString);
+
 	# TODO: Validate that the message is actually for a device... (is this required here? The define should have done that)
 	
 	if (!exists($modules{HiveHome_Device}{defptr}{$id})) 
 	{
 		Log(1, "HiveHome_Device_Parse: Hive $type device doesnt exist: $name");
-		return "UNDEFINED ${name}_${type}_".${id} =~ tr/-/_/r." HiveHome_Device ${name} ${id}";
+		if (lc($node->{id}) eq lc($id)) {
+			return "UNDEFINED ${name}_${type}_".${id} =~ tr/-/_/r." ${name} ${id} ".$node->{type};
+		}
+		Log(1, "HiveHome_Device_Parse: Invalid parameters provided to be able to autocreate the device!");
+		return "Invalid parameters provided to be able to autocreate the device!";
 	}
 
 	my $myState = "Disconnected";
 
 	# Get the hash of the Hive device object
 	my $shash = $modules{HiveHome_Device}{defptr}{$id};
-
-	# Convert the node details back to JSON.
-	my $node = decode_json($nodeString);
 
 	if (lc($node->{id}) eq lc($id))
 	{
@@ -331,9 +342,10 @@ sub HiveHome_Device_Parse
 	<a name="HiveHome_DeviceDefine"></a>
 	<b>Define</b>
 	<ul>
-        <code>define &lt;name&gt; HiveHome_device &lt;id&gt;</code>
+        <code>define &lt;name&gt; HiveHome_device &lt;id&gt; &lt;device type&gt;</code>
         <br><br>
 		The &lt;id&gt; is a 36 character GUID used by HiveHome to identify the device.<br>
+		The &lt;device type&gt; can be one of; boilermodule, thermostatui, trv, hub.<br>
 		You should never need to specify this yourself, the <a href="#autocreate">autocreate</a> module will automatically create all HiveHome devices.<br>
 		Example:
 		<ul>

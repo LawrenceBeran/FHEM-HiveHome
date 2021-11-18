@@ -39,7 +39,7 @@ sub HiveHome_Action_Define
 
 	Log(5, "HiveHome_Action_Define: enter");
 
-	my ($name, $type, $hiveType, $id) = split("[ \t][ \t]*", $def);
+	my ($name, $hiveType, $id) = split("[ \t][ \t]*", $def);
 	$id = lc($id); # nomalise id
 
 	if (exists($modules{HiveHome_Action}{defptr}{$id})) 
@@ -186,21 +186,25 @@ sub HiveHome_Action_Parse
 
 	Log(5, "HiveHome_Action_Parse: enter");
 
+	# Convert the node details back to JSON.
+	my $node = decode_json($nodeString);
+
 	# TODO: Validate that the message is actually for a device... (is this required here? The define should have done that)
 	
 	if (!exists($modules{HiveHome_Action}{defptr}{$id})) 
 	{
 		Log(1, "HiveHome_Action_Parse: Hive $type device doesnt exist: $name");
-		return "UNDEFINED ${name}_".${id} =~ tr/-/_/r." HiveHome_Action ${name} ${id}";
+		if (lc($node->{id}) eq lc($id)) {
+			return "UNDEFINED ${name}_".${id} =~ tr/-/_/r." ${name} ${id}";
+		}
+		Log(1, "HiveHome_Action_Parse: Invalid parameters provided to be able to autocreate the action!");
+		return "Invalid parameters provided to be able to autocreate the action!";
 	}
 
 	my $myState = "Disconnected";
 
 	# Get the hash of the Hive device object
 	my $shash = $modules{HiveHome_Action}{defptr}{$id};
-
-	# Convert the node details back to JSON.
-	my $node = decode_json($nodeString);
 
 	if (lc($node->{id}) eq lc($id))
 	{

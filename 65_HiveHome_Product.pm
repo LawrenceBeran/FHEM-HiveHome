@@ -60,19 +60,25 @@ sub HiveHome_Product_Define($$)
 
 	Log(5, "HiveHome_Product_Define: enter");
 
-	my ($name, $type, $hiveType, $id) = split("[ \t][ \t]*", $def);
+	my ($name, $hiveType, $id, $productType) = split("[ \t][ \t]*", $def);
 	$id = lc($id); # nomalise id
 
-	if (exists($modules{HiveHome_Product}{defptr}{$id})) 
-	{
+	if (!defined($productType) or !exists($productTypeIcons{lc($productType)})) {
+		my $msg = "HiveHome_Product_Define: missing or invalid product type argument missing. It must be one of; hotwater, heating, trvcontrol.";
+		Log(1, $msg);
+		return $msg;
+	}
+	
+	if (exists($modules{HiveHome_Product}{defptr}{$id})) {
 		my $msg = "HiveHome_Product_Define: Device with id $id is already defined";
-		Log(1, "$msg");
+		Log(1, $msg);
 		return $msg;
 	}
 
 	Log(5, "HiveHome_Product_Define id $id ");
 	$hash->{id} 	= $id;
 	$hash->{STATE} = 'Disconnected';
+	$hash->{productType} = $productType;
 	
 	$modules{HiveHome_Product}{defptr}{$id} = $hash;
 
@@ -101,15 +107,15 @@ sub HiveHome_Product_Define($$)
 		# Only interested in events from the "global" device for now.
 		$hash->{NOTIFYDEV}	= "global";
 
-		# See the earlier comment about screwed up logic.
-		# Is there a better way to correctly set this up?
-#		if (defined($hash->{productType}) && lc($hash->{productType}) eq "trvcontrol")
+		if (lc($productType) eq "trvcontrol")
 		{
 			$hash->{NOTIFYDEV}	.= ",i:TYPE=HiveHome_Product:FILTER=i:productType=heating";
 		}
 
-		$attr{$name}{controlZoneHeating} = 1 if (!exists($attr{$name}{controlZoneHeating}));
-		$attr{$name}{controlZoneHeatingMinNumberOfTRVs} = 3 if (!exists($attr{$name}{controlZoneHeatingMinNumberOfTRVs}));
+		if (lc($productType) eq "heating") {
+			$attr{$name}{controlZoneHeating} = 1 if (!exists($attr{$name}{controlZoneHeating}));
+			$attr{$name}{controlZoneHeatingMinNumberOfTRVs} = 3 if (!exists($attr{$name}{controlZoneHeatingMinNumberOfTRVs}));
+		}
 
 		$attr{$name}{autoAlias} = '1' if (!exists($attr{$name}{autoAlias}));
 		$attr{$name}{room} = 'HiveHome' if (!exists($attr{$name}{room}));
@@ -120,9 +126,9 @@ sub HiveHome_Product_Define($$)
 		if (!exists($attr{$name}{icon}))
 		{
 			# Show an icon representative of the products type...
-			if (defined($hash->{productType}) && $productTypeIcons{lc($hash->{productType})})
+			if ($productTypeIcons{lc($productType)})
 			{
-				$attr{$name}{icon} = $productTypeIcons{lc($hash->{productType})};
+				$attr{$name}{icon} = $productTypeIcons{lc($productType)};
 			} 
 			else 
 			{
@@ -134,16 +140,14 @@ sub HiveHome_Product_Define($$)
 		{
 			HiveHome_Product_SetAlias($hash, $name);
 
-
 			# I think I can add HTML into the 'devStateIcon' attribute. Maybe I can get the boost remaining time under the 'mode' attribute icon.
-			if ($hash->{productType} eq 'heating' or
-				$hash->{productType} eq 'trvcontrol')
+			if (lc($productType) eq 'heating' or lc($productType) eq 'trvcontrol')
 			{
 #				$attr{$name}{devStateIcon} = 'Online:10px-kreis-gruen@green Offline:10px-kreis-rot@red Disconnected:message_attention@orange BOOST:sani_heating_boost SCHEDULE:sani_heating_automatic MANUAL:sani_heating_manual OFF:sani_heating_level_0 Temp:temp_temperature';
 #				$attr{$name}{stateFormat} = "{ my \$boostVal = InternalNum(\$name, 'boost', 0, 1);my \$boostState = '';\$boostState = sprintf('%02d', \$boostVal / 60).':'.sprintf('%02d', \$boostVal % 60).\"\n\" if(\$boostVal > 0);return ReadingsVal(\$name,'mode','').\"\n\".\$boostState.\"\nTemp\n\".ReadingsVal(\$name,'temperature','').\"°C\n\".ReadingsVal(\$name,'working','') }";
 				$hash->{webCmd}   = 'desiredTemperature'; # Hint for FHEMWEB
 			}
-			elsif ($hash->{productType} eq 'hotwater')
+			elsif (lc($productType) eq 'hotwater')
 			{
 #				$attr{$name}{devStateIcon} = 'Online:10px-kreis-gruen@green Offline:10px-kreis-rot@red Disconnected:message_attention@orange BOOST:sani_heating_boost SCHEDULE:sani_heating_automatic MANUAL:sani_heating_manual OFF:sani_heating_level_0';
 #				$attr{$name}{stateFormat} = "{ my \$boostVal = InternalNum(\$name, 'boost', 0, 1);my \$boostState = '';\$boostState = sprintf('%02d', \$boostVal / 60).':'.sprintf('%02d', \$boostVal % 60).\"\n\" if(\$boostVal > 0);return ReadingsVal(\$name,'mode','').\"\n\".\$boostState.\"\n\".ReadingsVal(\$name,'working','') }";
@@ -303,7 +307,6 @@ sub SetAttribute($$$)
 	}
 }
 
-
 sub HiveHome_Product_Parse($$$)
 {
 	my ($hash, $msg, $device) = @_;
@@ -311,12 +314,19 @@ sub HiveHome_Product_Parse($$$)
 
 	Log(5, "HiveHome_Product_Parse: enter");
 
+	# Convert the node details back to JSON.
+	my $node = decode_json($nodeString);
+
 	# TODO: Validate that the message is actually for a device... (is this required here? The define should have done that)
-	
-	if (!exists($modules{HiveHome_Product}{defptr}{$id})) 
-	{
+
+	if (!exists($modules{HiveHome_Product}{defptr}{$id})) {
 		Log(1, "HiveHome_Product_Parse: Hive $type device doesnt exist: $name");
-		return "UNDEFINED ${name}_${type}_".${id} =~ tr/-/_/r." HiveHome_Product ${name} ${id}";
+
+		if (lc($node->{id}) eq lc($id)) {
+			return "UNDEFINED ${name}_${type}_".${id} =~ tr/-/_/r." ${name} ${id} ".$node->{type};
+		}
+		Log(1, "HiveHome_Product_Parse: Invalid parameters provided to be able to autocreate the product!");
+		return "Invalid parameters provided to be able to autocreate the product!";
 	}
 
 	my $myState = "Disconnected";
@@ -324,14 +334,8 @@ sub HiveHome_Product_Parse($$$)
 	# Get the hash of the Hive device object
 	my $shash = $modules{HiveHome_Product}{defptr}{$id};
 
-	# Convert the node details back to JSON.
-	my $node = decode_json($nodeString);
-
 	if (lc($node->{id}) eq lc($id))
 	{
-		if (lc($node->{type}) eq '')
-		{}
-
         $shash->{productType}		= $node->{type};
         $shash->{name}				= $node->{name};
         $shash->{parent}			= $node->{parent};
@@ -518,7 +522,6 @@ sub HiveHome_Product_Notify($$)
 		Log(4, "HiveHome_Product_Notify(${ownName}): Set alias - ${devName}");
 
 		HiveHome_Product_SetAlias($own_hash, $ownName);
-
 	}
 
 	
@@ -529,10 +532,9 @@ sub HiveHome_Product_Notify($$)
 	if (	(lc($dev_hash->{TYPE}) eq "hivehome_product" && lc($dev_hash->{productType} eq "heating"))
 		&& 	(lc($own_hash->{TYPE}) eq "hivehome_product" && lc($own_hash->{productType} eq "trvcontrol")))
 	{
-		my $devFriendlyName = $dev_hash->{name};
-		my $ownFriendlyName = $own_hash->{name};
-
-		Log(4, "HiveHome_Product_Notify($ownFriendlyName): - ${devFriendlyName}");
+#		my $devFriendlyName = $dev_hash->{name};
+#		my $ownFriendlyName = $own_hash->{name};
+#		Log(4, "HiveHome_Product_Notify(${ownFriendlyName}): - ${devFriendlyName}");
 
 		# If the TRV is in the same zone as the heating product
 		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
@@ -608,14 +610,15 @@ sub HiveHome_Product_Notify($$)
 	<a name="HiveHome_ProductDefine"></a>
 	<b>Define</b>
 	<ul>
-        <code>define &lt;name&gt; HiveHome_device &lt;id&gt;</code>
+        <code>define &lt;name&gt; HiveHome_Product &lt;id&gt; &lt;product type&gt;</code>
         <br><br>
 		The &lt;id&gt; is a 36 character GUID used by HiveHome to identify the product.<br>
+		The &lt;product type&gt; can be one of; heating, trvcontrol, hotwater.<br>
 		You should never need to specify this by yourself, the <a href="#autocreate">autocreate</a> module will automatically create all HiveHome devices.<br>
 
 		Example:
 		<ul>
-			<code>define myHiveHome_Product HiveHome_Product 72dd3aa0-9725-44ed-9266-de25a4b253e9</code><br>
+			<code>define myHiveHome_Product HiveHome_Product 72dd3aa0-9725-44ed-9266-de25a4b253e9 heating</code><br>
 		</ul>	
         <br><br>
 	</ul>
