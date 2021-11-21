@@ -186,8 +186,9 @@ sub HiveHome_Product_SetAlias($$)
 	my $attVal = AttrVal($name, 'autoAlias', undef);
 	if (defined($attVal) && $attVal eq '1')
 	{
-		fhem("attr ${name} alias ".InternalVal($name, 'name', '').' '.InternalVal($name, 'productType', ''));
-	}	
+		my $cmd = "attr ${name} alias ".InternalVal($name, 'name', '').' '.InternalVal($name, 'productType', '');
+		fhem($cmd);
+	}
 	Log(5, "HiveHome_Product_SetAlias: exit");
 	return undef;
 }
@@ -486,7 +487,7 @@ sub HiveHome_Product_Parse($$$)
 
 			readingsEndUpdate($shash, 1);
 		}
-		HiveHome_Product_SetAlias($hash, $name);
+		HiveHome_Product_SetAlias($shash, $shash->{NAME});
 	}
 
 	$shash->{STATE} = $myState;
