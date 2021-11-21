@@ -6,7 +6,6 @@ use warnings;
 use AttrTemplate;
 use SetExtensions;
 use Data::Dumper;
-#use HiveHome;
 
 sub trim($) { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
 sub	toString($) { my ($parameter) = @_; if (defined($parameter)) { return $parameter; } else { return '<undefined>'; } };
