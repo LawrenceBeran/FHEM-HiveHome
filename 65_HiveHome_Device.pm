@@ -4,7 +4,7 @@ package main;
 use strict;
 use warnings;
 
-sub HiveHome_Device_Initialize
+sub HiveHome_Device_Initialize($)
 {
 	my ($hash) = @_;
 
@@ -27,7 +27,7 @@ sub HiveHome_Device_Initialize
 	return undef;
 }
 
-sub HiveHome_Device_CheckIODev
+sub HiveHome_Device_CheckIODev($)
 {
 	my $hash = shift;
 	return !defined($hash->{IODev}) || ($hash->{IODev}{TYPE} ne "HiveHome_Device");
@@ -125,7 +125,7 @@ sub HiveHome_Device_Define
 	return undef;
 }
 
-sub HiveHome_Device_Undefine
+sub HiveHome_Device_Undefine($$)
 {
 	my ($hash,$arg) = @_;
 
@@ -138,23 +138,23 @@ sub HiveHome_Device_Undefine
 	return undef;
 }
 
-sub HiveHome_Device_SetAlias
+sub HiveHome_Device_SetAlias($$)
 {
 	my ($hash, $name) = @_;
 
 	Log(5, "HiveHome_Device_SetAlias: enter");
 
 	my $attVal = AttrVal($name, 'autoAlias', undef);
-	if (defined($attVal) && $attVal eq '1' && 1 == $init_done)
+	if (defined($attVal) && $attVal eq '1')
 	{
-		fhem("attr ${name} alias ".InternalVal($name, 'name', '').' '.InternalVal($name, 'productType', ''));
+		fhem("attr ${name} alias ".InternalVal($name, 'name', '').' '.InternalVal($name, 'deviceType', ''));
 	}
 
 	Log(5, "HiveHome_Device_SetAlias: exit");
 	return undef;
 }
 
-sub HiveHome_Device_Attr
+sub HiveHome_Device_Attr($$$$)
 {
     my ( $cmd, $name, $attrName, $attrVal ) = @_;
     my $hash = $defs{$name};
@@ -163,7 +163,7 @@ sub HiveHome_Device_Attr
 
 	Log(4, "HiveHome_Device_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
-	if ($attrName eq 'autoAlias' && 1 == $init_done) 
+	if ($attrName eq 'autoAlias') 
 	{
         if ($cmd eq 'set')
 		{
@@ -191,7 +191,7 @@ sub HiveHome_Device_Attr
     return undef;		
 }
 
-sub HiveHome_Device_Set
+sub HiveHome_Device_Set($$$$)
 {
 	my ($hash,$name,$cmd,@args) = @_;
 
@@ -207,7 +207,7 @@ sub HiveHome_Device_Set
 	return $ret;
 }
 
-sub HiveHome_Device_Parse
+sub HiveHome_Device_Parse($$$)
 {
 	my ($hash, $msg, $device) = @_;
 	my ($name, $type, $id, $nodeString) = split(",", $msg, 4);
@@ -305,7 +305,7 @@ sub HiveHome_Device_Parse
 		readingsEndUpdate($shash, 1);
 
 
-		HiveHome_Device_SetAlias($shash, $name);
+		HiveHome_Device_SetAlias($shash, $shash->{NAME});
 	}
 
 #	$shash->{STATE} = $myState;

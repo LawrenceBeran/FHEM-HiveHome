@@ -4,7 +4,7 @@ package main;
 use strict;
 use warnings;
 
-sub HiveHome_Action_Initialize
+sub HiveHome_Action_Initialize($)
 {
 	my ($hash) = @_;
 
@@ -27,13 +27,13 @@ sub HiveHome_Action_Initialize
 	return undef;
 }
 
-sub HiveHome_Action_CheckIODev
+sub HiveHome_Action_CheckIODev($)
 {
 	my $hash = shift;
 	return !defined($hash->{IODev}) || ($hash->{IODev}{TYPE} ne "HiveHome_Action");
 }
 
-sub HiveHome_Action_Define
+sub HiveHome_Action_Define($$)
 {
 	my ($hash, $def) = @_;
 
@@ -98,7 +98,7 @@ sub HiveHome_Action_Define
 	return undef;
 }
 
-sub HiveHome_Action_Undefine
+sub HiveHome_Action_Undefine($$)
 {
 	my ($hash,$arg) = @_;
 
@@ -111,14 +111,14 @@ sub HiveHome_Action_Undefine
 	return undef;
 }
 
-sub HiveHome_Action_SetAlias
+sub HiveHome_Action_SetAlias($$)
 {
 	my ($hash, $name) = @_;
 
 	Log(5, "HiveHome_Action_SetAlias: enter");
 
 	my $attVal = AttrVal($name, 'autoAlias', undef);
-	if (defined($attVal) && $attVal eq '1' && 1 == $init_done)
+	if (defined($attVal) && $attVal eq '1')
 	{
 		fhem("attr ${name} alias ".InternalVal($name, 'name', ''));
 	}	
@@ -126,7 +126,7 @@ sub HiveHome_Action_SetAlias
 	return undef;
 }
 
-sub HiveHome_Action_Attr
+sub HiveHome_Action_Attr($$$$)
 {
     my ( $cmd, $name, $attrName, $attrVal ) = @_;
     my $hash = $defs{$name};
@@ -135,7 +135,7 @@ sub HiveHome_Action_Attr
 
 	Log(4, "HiveHome_Action_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
-	if ($attrName eq 'autoAlias' && 1 == $init_done) 
+	if ($attrName eq 'autoAlias') 
 	{
         if ($cmd eq 'set')
 		{
@@ -163,7 +163,7 @@ sub HiveHome_Action_Attr
     return undef;		
 }
 
-sub HiveHome_Action_Set
+sub HiveHome_Action_Set($$$$)
 {
 	my ($hash,$name,$cmd,@args) = @_;
 
@@ -179,7 +179,7 @@ sub HiveHome_Action_Set
 	return $ret;
 }
 
-sub HiveHome_Action_Parse
+sub HiveHome_Action_Parse($$$)
 {
 	my ($hash, $msg, $device) = @_;
 	my ($name, $type, $id, $nodeString) = split(",", $msg, 4);
@@ -213,7 +213,7 @@ sub HiveHome_Action_Parse
 
 		$myState = $node->{enabled} ? "Enabled" : "Disabled";
 
-		HiveHome_Action_SetAlias($shash, $name);
+		HiveHome_Action_SetAlias($shash, $shash->{NAME});
 	}
 
 	$shash->{STATE} = $myState;
