@@ -71,7 +71,10 @@ sub HiveHome_Define($$)
 
 	# Interface used by the hubs children to communicate with the physical hub
 	$hash->{InitNode} = \&HiveHome_UpdateNodes;
-
+    # Interface used by the hubs children to say a zone has been boosted
+    $hash->{ZoneBoosted} = \&HiveHome_ZoneBoosted;
+    # Interface used by the hubs children to say a zone has been boosted
+    $hash->{TRVScheduleModified} = \&HiveHome_TRVScheduleModified;
 
 	# Create a timer to get object details
 	InternalTimer(gettimeofday()+1, "HiveHome_GetUpdate", $hash, 0);
@@ -123,6 +126,42 @@ sub HiveHome_GetUpdate()
 	Log(5, "HiveHome_GetUpdate: exit");
 
 	return undef;
+}
+
+############################################################################
+# This function boostes all TRVs that make up a zone
+############################################################################
+
+sub HiveHome_ZoneBoosted($$)
+{
+	my ($hash, $fromDefine) = @_;
+
+	Log(5, "HiveHome_ZoneBoosted: enter");
+
+	Log(5, "HiveHome_ZoneBoosted: exit");
+}
+
+sub HiveHome_TRVScheduleModified($$)
+{
+	my ($hash, $fromDefine) = @_;
+
+	Log(5, "HiveHome_TRVScheduleModified: enter");
+    
+    Log(4, "HiveHome_TRVScheduleModified: from device: ".$fromDefine->{NAME});
+
+    # NOTE: This function is called from HiveHome_Product_Parse which in turn is called from HiveHome_UpdateNodes using Dispatch.
+    #       We just want to flag at this point that the weekProfile has been modified and then use the flag in
+    #       HiveHome_UpdateNodes after all child items have been processed to determine whether the parents (zone)
+    #       heating weekProfile needs to be updated.
+   
+    my $zone = InternalVal($fromDefine->{NAME}, 'zone', undef);
+    if (defined($zone))
+    {
+        Log(4, "HiveHome_TRVScheduleModified: zone: ".$zone);
+        $hash->{helper}{$zone} = 1;
+    }
+
+	Log(5, "HiveHome_TRVScheduleModified: exit");
 }
 
 ############################################################################
@@ -203,9 +242,6 @@ sub HiveHome_UpdateNodes()
                     {
                         # We have found a matching TRV
                         my $trv = $product;
-
-                        # TODO: deal with the device capabilities
-#                        $trv->{deviceCapabilities}
 
                         $trv->{deviceType} = $trvDevice->{type};
 
@@ -330,10 +366,24 @@ sub HiveHome_UpdateNodes()
                     Log(2, "HiveHome_UpdateNodes: Could not find heating product for zone ".$zone);
                 }
             }
+
+            foreach my $product (@products)
+            {
+                if ($product->{type} eq 'heating')
+                {
+                    my $hashHeating = $modules{HiveHome_Product}{defptr}{$product->{id}};
+
+                    Log(4, "HiveHome_UpdateNodes: Checking zone TRV has been updated: ".$hashHeating->{NAME});
+                    if (defined($hash->{helper}{$product->{internals}->{zone}}))
+                    {
+                        Log(1, "HiveHome_UpdateNodes: Zone TRV has been updated: ".$hashHeating->{NAME});
+                        delete($hash->{helper}{$product->{internals}->{zone}});
+
+                        # TODO: Update heating based on all child TRVs heating schedule.
+                    }
+                }
+            }
         }
-
-
-
 
         ### Get the latest used token
         my $token = $hiveHomeClient->getToken();
