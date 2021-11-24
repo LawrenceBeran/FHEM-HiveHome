@@ -185,8 +185,16 @@ sub HiveHome_Product_SetAlias($$)
 	my $attVal = AttrVal($name, 'autoAlias', undef);
 	if (defined($attVal) && $attVal eq '1' && $init_done)
 	{
-		my $cmd = "attr ${name} alias ".InternalVal($name, 'name', '').' '.InternalVal($name, 'productType', '');
-		fhem($cmd);
+		my $friendlyName = InternalVal($name, 'name', undef);
+		my $deviceType = InternalVal($name, 'deviceType', undef);
+		if (defined($friendlyName) && defined($deviceType))
+		{
+			my $alias = AttrVal($name, 'alias', undef);
+			if (!defined($alias) || ($alias ne "${friendlyName} ${deviceType}"))
+			{
+				fhem("attr ${name} alias ${friendlyName} ${deviceType}");
+			}
+		}
 	}
 	Log(5, "HiveHome_Product_SetAlias: exit");
 	return undef;
@@ -207,7 +215,11 @@ sub HiveHome_Product_Attr($$$$)
 		{
 			if ($attrVal eq '1')
 			{
-				fhem("attr ${name} alias ".$hash->{name}.' '.$hash->{productType});
+				my $alias = AttrVal($name, 'alias', undef);
+				if (!defined($alias) || ($alias ne $hash->{name}." ".$hash->{productType}))
+				{
+					fhem("attr ${name} alias ".$hash->{name}." ".$hash->{productType});
+				}
 			}
 			else
 			{
