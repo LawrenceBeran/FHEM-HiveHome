@@ -367,22 +367,8 @@ sub HiveHome_UpdateNodes()
                 }
             }
 
-            foreach my $product (@products)
-            {
-                if ($product->{type} eq 'heating')
-                {
-                    my $hashHeating = $modules{HiveHome_Product}{defptr}{$product->{id}};
+            HiveHome_SetZoneScheduleByZoneTRVSchedules($hash);
 
-                    Log(4, "HiveHome_UpdateNodes: Checking zone TRV has been updated: ".$hashHeating->{NAME});
-                    if (defined($hash->{helper}{$product->{internals}->{zone}}))
-                    {
-                        Log(1, "HiveHome_UpdateNodes: Zone TRV has been updated: ".$hashHeating->{NAME});
-                        delete($hash->{helper}{$product->{internals}->{zone}});
-
-                        # TODO: Update heating based on all child TRVs heating schedule.
-                    }
-                }
-            }
         }
 
         ### Get the latest used token
@@ -393,6 +379,101 @@ sub HiveHome_UpdateNodes()
     }
 
 	Log(5, "HiveHome_UpdateNodes: exit");
+}
+
+sub _getHeatingProducts($$)
+{
+	my ($productType, $zone) = @_;
+
+	my @products;
+
+    foreach my $device ( sort keys %{$modules{HiveHome_Product}{defptr}} )
+    {
+        my $hash=$modules{HiveHome_Product}{defptr}{$device};
+       
+        next if (!defined($hash->{IODev}) || !defined($hash->{NAME}) || !defined($hash->{productType}));
+        next if (lc($hash->{productType}) ne lc($productType));
+        # If the zone parameter is defined, then reject all devices that are in a different zone.
+        next if (defined($zone) && lc($hash->{zone}) ne lc($zone));
+
+   		push (@products, $hash->{NAME});
+    }
+
+	return @products;        
+}
+
+sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
+{
+	my ($hashHiveHome) = @_;
+
+	Log(5, "HiveHome_SetZoneScheduleByZoneTRVSchedules: enter");
+
+    my $hiveHomeClient = _getHiveHomeInterface($hashHiveHome);
+    # TODO: exit if undefined.
+
+    # For each heating products
+    my @heatingProducts = _getHeatingProducts('heating', undef);
+	foreach my $heatingProduct (@heatingProducts) 
+	{
+        # Get the heating products zone.
+		my $heatingZone = lc(InternalVal($heatingProduct, "zone", undef));
+        if (defined($heatingZone))
+        {
+            Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Checking zone TRV has been updated: ${heatingProduct}");
+
+            # Test to see if a TRV within that heating zone has been modified 
+            if (defined($hashHiveHome->{helper}{$heatingZone}))
+            {
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone TRV has been updated: ${heatingProduct}");
+
+                delete($hashHiveHome->{helper}{$heatingZone});
+
+                # Test to see if the heating product that controls that zone is configured to have its schedule set by its TRVs
+#                my $setZoneScheduleByTRVSchedule = AttrVal($heatingProduct, 'setZoneScheduleByTRVSchedule', 0);
+#                if (0 != $setZoneScheduleByTRVSchedule)
+                {
+                    Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone is configured to be set by zone TRVs: ${heatingProduct}");
+
+                    my $weekProfileCmdString = undef;
+                    my $jsonHeatingSchedule = undef;
+
+                    # Get all TRVs in the heating zone.
+                    my @zoneTRVs = _getHeatingProducts('trvcontrol', $heatingZone);
+                    foreach my $zoneTRV (@zoneTRVs)
+                    {
+                        Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${zoneTRV}");
+
+                        my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
+                        foreach my $day (@daysofweek) 
+                        {
+                    		my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString(InternalVal($zoneTRV, "WeekProfile_$day", undef));
+                            $dayProfile =~ s/[.]0//ig;
+                            $weekProfileCmdString .= $day.' '.$dayProfile.' ';
+                        }
+
+#                        Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV schedule: ${weekProfileCmdString}");
+
+                        my $jsonTRVSchedule = $hiveHomeClient->_convertScheduleStringToJSON('trvcontrol', $weekProfileCmdString);
+                        if (defined($jsonTRVSchedule))
+                        {
+#                            Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV json schedule: ".Dumper($jsonTRVSchedule));
+
+                            if (!defined($jsonHeatingSchedule))
+                            {
+                                $jsonHeatingSchedule = $jsonTRVSchedule 
+                            }
+                            else
+                            {
+                                # TODO: Merge TRV schedule into 
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+	Log(5, "HiveHome_SetZoneScheduleByZoneTRVSchedules: exit");
 }
 
 sub HiveHome_Write_Action($$$$@)
