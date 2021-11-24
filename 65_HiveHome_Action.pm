@@ -129,7 +129,7 @@ sub HiveHome_Action_SetAlias($$)
 				fhem("attr ${name} alias ${friendlyName}");
 			}
 		}
-	}	
+	}
 	Log(5, "HiveHome_Action_SetAlias: exit");
 	return undef;
 }
