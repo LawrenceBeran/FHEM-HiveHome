@@ -1587,5 +1587,30 @@ sub setTRVViewingAngle($$$)
     return $ret;
 }
 
+sub setTRVChildLock($$$)
+{
+    my $self = shift;
+    my $id = shift;
+    my $lock = shift;
+
+    my $ret = undef;
+
+    if (!defined($self->{apiHive}))
+    {
+        $ret = "Unable to call HiveHome - (No API object)!";
+    }
+    elsif (!defined($lock))
+    {
+        $self->_log(4, "setTRVChildLock: Lock parameter must be defined:");
+        $ret = "Invalid lock!";
+    }    
+    else
+    {
+        my $data = { childLock => JSON::true };
+        $data->{childLock} = JSON::false if ($lock == 0);
+        my $resp = $self->{apiHive}->apiPOST('/nodes/trv/'.$id, $data);
+    }
+    return $ret;
+}
 
 1;
