@@ -704,8 +704,12 @@ sub HiveHome_Product_Notify($$)
 				<code>set name weekProfile Thu 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0 Fri 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0</code><br>
 		This will not modify the current profile for all unspecified days.
 		</li><br>	
+		<a name="childLock"></a>
+		<li><code>childLock &lt;lock&gt;</code><br><br>
+		Locks or unlocks the trvcontrol, locking the trv stops any tampering of the temperature setting by turning the dial.<br>
+		lock - 0 or 1. 0 to unlock the trv and 1 to lock it.
+		</li><br>
 	</ul>
-
 	<br><br>
 	<a name="HiveHome_ProductGet"></a>
 	<b>Get</b>
