@@ -766,6 +766,19 @@ sub HiveHome_Write_Product($$$$@)
                 $ret = "missing argument value, must be either horizontal or vertical";
             }
         }
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock'))
+        {
+            Log(3, "HiveHome_Write_Product(${cmd}) - ${args[0]}");
+
+            if (defined($args[0]) && ($args[0] == 0 || $args[0] == 1))
+            {
+                $ret = $hiveHomeClient->setTRVChildLock($shash->{deviceId}, $args[0]);
+            }
+            else
+            {
+                $ret = "missing argument value, must be either 0 or 1";
+            }
+        }        
         elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol'))
         {
             if ($cmd eq 'desiredtemperature')
@@ -863,7 +876,7 @@ sub HiveHome_Write_Product($$$$@)
                 my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
-                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical ";
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childLock:0,1 ";
             }
         }
         elsif (lc($shash->{productType}) eq 'hotwater')
@@ -1000,6 +1013,13 @@ sub _verifyWriteProductCommandArgs($$$$)
                 $ret = "missing argument value, must be either horizontal or vertical";
             }
         }
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock'))
+        {
+            if (!defined($args[0]) || ($args[0] != 0 && $args[0] != 1))
+            {
+                $ret = "missing argument value, must be either 0 or 1";
+            }
+        }
         elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol'))
         {
             if ($cmd eq 'desiredtemperature')
@@ -1063,7 +1083,7 @@ sub _verifyWriteProductCommandArgs($$$$)
                 my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
-                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical ";
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childlock:0,1 ";
             }
         }
         elsif (lc($shash->{productType}) eq 'hotwater')
