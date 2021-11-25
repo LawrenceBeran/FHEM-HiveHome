@@ -118,9 +118,17 @@ sub HiveHome_Action_SetAlias($$)
 	Log(5, "HiveHome_Action_SetAlias: enter");
 
 	my $attVal = AttrVal($name, 'autoAlias', undef);
-	if (defined($attVal) && $attVal eq '1')
+	if (defined($attVal) && $attVal eq '1' && $init_done)
 	{
-		fhem("attr ${name} alias ".InternalVal($name, 'name', ''));
+		my $friendlyName = InternalVal($name, 'name', undef);
+		if (defined($friendlyName))
+		{
+			my $alias = AttrVal($name, 'alias', undef);
+			if (!defined($alias) || $alias ne $friendlyName)
+			{
+				fhem("attr ${name} alias ${friendlyName}");
+			}
+		}
 	}	
 	Log(5, "HiveHome_Action_SetAlias: exit");
 	return undef;
@@ -135,13 +143,17 @@ sub HiveHome_Action_Attr($$$$)
 
 	Log(4, "HiveHome_Action_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
-	if ($attrName eq 'autoAlias') 
+	if ($attrName eq 'autoAlias' && $init_done) 
 	{
         if ($cmd eq 'set')
 		{
 			if ($attrVal eq '1')
 			{
-				fhem("attr ${name} alias ".$hash->{name}.' '.$hash->{productType});
+				my $alias = AttrVal($name, 'alias', undef);
+				if (!defined($alias) || ($alias ne $hash->{name}))
+				{
+					fhem("attr ${name} alias ".$hash->{name});
+				}
 			}
 			else
 			{
