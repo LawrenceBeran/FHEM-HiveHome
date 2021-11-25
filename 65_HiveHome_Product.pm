@@ -731,7 +731,7 @@ sub HiveHome_Product_Notify($$)
 		<li><code>childLock &lt;lock&gt;</code><br><br>
 		Locks or unlocks the trvcontrol, locking the trv stops any tampering of the temperature setting by turning the dial.<br>
 		lock - 0 or 1. 0 to unlock the trv and 1 to lock it.
-		</li><br>
+		</li><br>	
 	</ul>
 	<br><br>
 	<a name="HiveHome_ProductGet"></a>
