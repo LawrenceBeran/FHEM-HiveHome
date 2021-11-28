@@ -409,6 +409,56 @@ sub _getHotterTemp($$)
     return $temp2;
 }
 
+sub _insertNewDayElement($$)
+{
+	my ($dayElements_ref, $element) = @_;
+
+    if (!defined(@{$dayElements_ref}[-1]))
+    {
+        # If the array is empty, just add the passed element to the array
+        push(@{$dayElements_ref}, $element);
+    }
+    else
+    {
+        # The array has some values, lets check to see if the last element has the same temperature, 
+        # only add the new element if the current temp is different to the previous temp
+        my ($prevTime, $prevTemp) = split(/-/, $dayElements_ref->[-1]);
+        my ($curTime, $curTemp) = split(/-/, $element);
+
+        if ($prevTemp != $curTemp)
+        {
+            push(@{$dayElements_ref}, $element);            
+        }
+    }
+}
+
+# TODO: Need to rethink the logic here...
+#
+#   The heating schedule needs to cater for all TRVS. If DS TRVs are calling for more heat than US, we cannot have the US settings
+#   override the DS settings.
+#   Need to have some way to have the higher temp setting take precedence but still allow for the temp to go down if both require
+#   the temp to drop.
+#       TRV01:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
+#       TRV02:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV03:              00:00-15 / 06:15-20 /                                       08:30-15 /              17:00-20 /              23:00-15 / 23:55-15
+#       TRV04:              00:00-19 / 06:15-22 /               07:30-18 /                          15:00-21 /              18:00-22 /  23:00-18
+#       TRV05:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV06:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV07:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV08:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
+#       TRV09:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV10:              00:00-15 / 06:15-20 /                                       08:30-15 /              17:00-20 /              23:00-15 / 23:55-15
+#       TRV11:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV12:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
+#       TRV13:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+#       TRV14:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
+
+#       NEW:                00:00-19 / 06:15-22 /   06:30-21 /  07:30-18 /  08:00-20 /  08:30-15 /  15:00-21 /  17:00-20 /  18:00-22 /  23:00-18 / 23:55-15
+#
+#       REQUIRED:           00:00-19 / 06:15-22 / 08:00-20 / 15:00-21 / 18:00-22 / 23:00-18
+
+#   Need to think about the ranges, not about set points. E.g. TRV05 sets the temp to 20 at 08:00, any temperature below this until its next setpoint at 18:00 should be ignored.
+
 sub _mergeDayHeatingShedule($$$$)
 {
 	my ($hiveHomeClient, $day, $heatingDayShedule, $trvDayShedule) = @_;
@@ -416,7 +466,7 @@ sub _mergeDayHeatingShedule($$$$)
 
     if (defined($trvDayShedule))
     {
-        Log(1, "${day} - ${trvDayShedule}");
+        Log(4, "_mergeDayHeatingShedule(${day}) - trv:     ${trvDayShedule}");
 
         # If we have a heating schedule defined for the day
         if (defined($heatingDayShedule))
@@ -424,7 +474,7 @@ sub _mergeDayHeatingShedule($$$$)
             # And a string compare does not match
             if ($heatingDayShedule ne $trvDayShedule)
             {
-                # TODO : Merge with current
+                Log(4, "_mergeDayHeatingShedule(${day}) - heating: ${heatingDayShedule}");
 
                 # Breakdown both schedules into their time/temp sections.
                 # UI schedule looks like - 00:00-15°C / 06:15-20°C / 08:30-15°C / 15:00-20°C / 23:00-15°C / 23:55-15°C
@@ -455,10 +505,10 @@ sub _mergeDayHeatingShedule($$$$)
                         if ($heatingElement eq $trvElement)
                         {
                             # Push either element into a new array.
-                            push(@retDayElements, $heatingElement);
+                            _insertNewDayElement(\@retDayElements, $heatingElement);
                             # Get new elements from both arrays.
-                            my $heatingElement = shift(@heatingDayElements);
-                            my $trvElement = shift(@trvDayElements);
+                            $heatingElement = shift(@heatingDayElements);
+                            $trvElement = shift(@trvDayElements);
                         }
                         else
                         {
@@ -469,10 +519,10 @@ sub _mergeDayHeatingShedule($$$$)
                             if ($heatingTime eq $trvTime)
                             {
                                 # The times are the same, so we need to use the hotter temperature.
-                                push(@retDayElements, "${heatingTime}-"_getHotterTemp($heatingTemp, $trvTemp));
+                                _insertNewDayElement(\@retDayElements, "${heatingTime}-"._getHotterTemp($heatingTemp, $trvTemp));
                                 # Get new elements from both arrays.
-                                my $heatingElement = shift(@heatingDayElements);
-                                my $trvElement = shift(@trvDayElements);                                
+                                $heatingElement = shift(@heatingDayElements);
+                                $trvElement = shift(@trvDayElements);
                             }
                             else
                             {
@@ -487,9 +537,9 @@ sub _mergeDayHeatingShedule($$$$)
                                 if ($heatingHour < $trvHour || ($heatingHour == $trvHour && $heatingMin <= $trvMin))
                                 {
                                     # Push heating element into the return array.
-                                    push(@retDayElements, $heatingElement);
+                                    _insertNewDayElement(\@retDayElements, $heatingElement);
                                     # Get new element from heating array.
-                                    my $heatingElement = shift(@heatingDayElements);
+                                    $heatingElement = shift(@heatingDayElements);
 
                                     # Note: The new heating element may be earlier then the current trv element, we need recheck from the beginning!
                                 }
@@ -497,28 +547,28 @@ sub _mergeDayHeatingShedule($$$$)
                                 {
                                     # The TRV element is earlier than the heating element.
                                     # Push trv element into the return array.
-                                    push(@retDayElements, $trvElement);
+                                    _insertNewDayElement(\@retDayElements, $trvElement);
                                     # Get new element from trv array.
-                                    my $trvElement = shift(@trvDayElements);
+                                    $trvElement = shift(@trvDayElements);
 
                                     # Note: The new trv element may be earlier then the current heating element, we need recheck from the beginning!
                                 }
                             }
                         }
                     }
-                    else if (defined($heatingElement))
+                    elsif (defined($heatingElement))
                     {
                         # Push heating element into the return array.
-                        push(@retDayElements, $heatingElement);
+                        _insertNewDayElement(\@retDayElements, $heatingElement);
                         # Get new element from heating array.
-                        my $heatingElement = shift(@heatingDayElements);
+                        $heatingElement = shift(@heatingDayElements);
                     }
-                    else if (defined($trvElement))
+                    elsif (defined($trvElement))
                     {
                         # Push heating element into the return array.
-                        push(@retDayElements, $trvElement);
+                        _insertNewDayElement(\@retDayElements, $trvElement);
                         # Get new element from heating array.
-                        my $trvElement = shift(@trvDayElements);
+                        $trvElement = shift(@trvDayElements);
                     }
                     else
                     {
@@ -528,7 +578,7 @@ sub _mergeDayHeatingShedule($$$$)
                 }
 
                 # Check if the new day schedule has the allowed number of elements!
-                if ($hiveHomeClient->_getMaxNumbHeatingElements() >= scaler(@retDayElements))
+                if ($hiveHomeClient->_getMaxNumbHeatingElements() >= $#retDayElements)
                 {
                     # The number of day elements are within the allowed range!
                     $retDaySchedule = join(' / ', @retDayElements);
@@ -543,6 +593,10 @@ sub _mergeDayHeatingShedule($$$$)
                     #       The 6:30 element would need to be changed to 21 and the 07:00 removed.
                     #               06:30-21 / 12:00-19
                     #
+                    # The number of day elements are within the allowed range!
+
+                    $retDaySchedule = join(' / ', @retDayElements);
+                    Log(1, "_mergeDayHeatingShedule(${day}) - Too many elements - ${retDaySchedule}");
                 }
             }
             else
@@ -563,6 +617,8 @@ sub _mergeDayHeatingShedule($$$$)
         # No TRV schedule defined, return the current heating schedule for the day.
         $retDaySchedule = $heatingDayShedule;
     }
+    Log(4, "_mergeDayHeatingShedule(${day}) - output:  ${retDaySchedule}");
+
     return $retDaySchedule;
 }
 
@@ -599,13 +655,13 @@ sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
                     Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone is configured to be set by zone TRVs: ${heatingProduct}");
 
                     my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
-                    my $heatingSchedule = undef;
+                    my %heatingSchedule;
 
                     # Get all TRVs in the heating zone.
                     my @zoneTRVs = _getHeatingProducts('trvcontrol', $heatingZone);
                     foreach my $zoneTRV (@zoneTRVs)
                     {
-                        Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${zoneTRV}");
+                        Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${zoneTRV}");
 
                         foreach my $day (@daysofweek) 
                         {
