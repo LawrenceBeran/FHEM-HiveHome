@@ -186,13 +186,13 @@ sub HiveHome_Product_SetAlias($$)
 	if (defined($attVal) && $attVal eq '1' && $init_done)
 	{
 		my $friendlyName = InternalVal($name, 'name', undef);
-		my $deviceType = InternalVal($name, 'deviceType', undef);
-		if (defined($friendlyName) && defined($deviceType))
+		my $productType = InternalVal($name, 'productType', undef);
+		if (defined($friendlyName) && defined($productType))
 		{
 			my $alias = AttrVal($name, 'alias', undef);
-			if (!defined($alias) || ($alias ne "${friendlyName} ${deviceType}"))
+			if (!defined($alias) || ($alias ne "${friendlyName} ${productType}"))
 			{
-				fhem("attr ${name} alias ${friendlyName} ${deviceType}");
+				fhem("attr ${name} alias ${friendlyName} ${productType}");
 			}
 		}
 	}
