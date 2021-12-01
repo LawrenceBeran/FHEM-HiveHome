@@ -38,6 +38,7 @@ sub HiveHome_Product_Initialize($)
 						. "temperatureOffset:${tempoffsetlist} "
 						. "controlZoneHeating:1,0 "
 						. "controlZoneHeatingMinNumberOfTRVs "
+						. "setScheduleFromTRVs:1,0 "
 						. $readingFnAttributes;
 
 	Log(5, "HiveHome_Product_Initialize: exit");
@@ -114,6 +115,11 @@ sub HiveHome_Product_Define($$)
 		if (lc($productType) eq "heating") {
 			$attr{$name}{controlZoneHeating} = 1 if (!exists($attr{$name}{controlZoneHeating}));
 			$attr{$name}{controlZoneHeatingMinNumberOfTRVs} = 3 if (!exists($attr{$name}{controlZoneHeatingMinNumberOfTRVs}));
+			$attr{$name}{setScheduleFromTRVs} = 0 if (!exists($attr{$name}{setScheduleFromTRVs}));
+		}
+
+		if (lc($productType) eq "trvcontrol") {
+			$attr{$name}{group} = 'HiveHome TRV' if (!exists($attr{$name}{group}));
 		}
 
 		$attr{$name}{autoAlias} = '1' if (!exists($attr{$name}{autoAlias}));
@@ -252,6 +258,10 @@ sub HiveHome_Product_Attr($$$$)
 		# TODO: Only valid for a heating type product.
 		# TODO: Update existing settings. Can wait until the next refresh for details displayed to the screen, 
 		# 		but the current temperature needs to be corrected against the offset.
+	}
+	elsif ($attrName eq 'setScheduleFromTRVs')
+	{
+		# TODO:
 	}
 
 	Log(5, "HiveHome_Product_Attr: exit");

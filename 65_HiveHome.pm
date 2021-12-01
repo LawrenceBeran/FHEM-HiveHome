@@ -678,9 +678,14 @@ sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
 
                 delete($hashHiveHome->{helper}{$heatingZone});
 
+                my $id = InternalVal($heatingProduct, 'id', undef);
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: No 'id' found for ${heatingProduct}") if (!defined($id));
+                my $hash = $modules{HiveHome_Product}{defptr}{$id};
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: No 'hash' found for ${heatingProduct} with id ${id}") if (!defined($id));
+
                 # Test to see if the heating product that controls that zone is configured to have its schedule set by its TRVs
-#                my $setZoneScheduleByTRVSchedule = AttrVal($heatingProduct, 'setZoneScheduleByTRVSchedule', 0);
-#                if (0 != $setZoneScheduleByTRVSchedule)
+                my $setScheduleFromTRVs = AttrVal($heatingProduct, 'setScheduleFromTRVs', 0);
+                if (0 != $setScheduleFromTRVs)
                 {
                     Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone is configured to be set by zone TRVs: ${heatingProduct}");
 
@@ -693,16 +698,52 @@ sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
                     {
                         Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${zoneTRV}");
 
-                        foreach my $day (@daysofweek) 
+                        # Do not use a TRV schedule which has override enabled.
+                        my $heatingOverride = lc(AttrVal($zoneTRV, 'HEATING_OVERRIDE', 'NO'));
+                        if ($heatingOverride eq "no") 
                         {
-                            $heatingSchedule{${day}} = _mergeDayHeatingShedule($hiveHomeClient, $day, $heatingSchedule{${day}}, InternalVal($zoneTRV, "WeekProfile_$day", undef));
+                            foreach my $day (@daysofweek) 
+                            {
+                                $heatingSchedule{${day}} = _mergeDayHeatingShedule($hiveHomeClient, $day, $heatingSchedule{${day}}, InternalVal($zoneTRV, "WeekProfile_${day}", undef));
+                            }
                         }
                     }
 
                     # TODO: Compare generated schedule with current schedule...
+                    my $weekProfileCmdString = undef;
+                    my $different = undef;
+                    foreach my $day (@daysofweek) 
+                    {
+                        if (!defined($heatingSchedule{${day}}))
+                        {
+                            $heatingSchedule{${day}} = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_${day}"});
+                        }
+                        else
+                        {
+                            my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_${day}"});
+                            $dayProfile =~ s/[.]0//ig;
+
+                            my $trvsProfile = HiveHome_ConvertUIDayProfileStringToCmdString($heatingSchedule{${day}});
+
+                            if (lc($dayProfile) eq lc($trvsProfile)) {
+                                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Provided profile (${trvsProfile}) matches current - ${dayProfile}");
+                            }
+                            else {
+                                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Provided profile (${trvsProfile}) different to current- ${dayProfile}");
+                                $different = 1;
+                            }
+                        }
+                        $weekProfileCmdString .= $day.' '.$heatingSchedule{${day}}.' ';
+                    }
+
 
                     # TODO: If schedules do not match, then apply new schedule to heating.
-
+                    if (defined($different)) {
+                        Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Complete WeekProfile - ".$weekProfileCmdString);
+#                        my $resp = $hiveHomeClient->_setSchedule(lc($hash->{productType}), $hash->{id}, $weekProfileCmdString);
+                    } else {
+                        Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: WeekProfile not changed from current - ".$weekProfileCmdString);
+                    }
                 }
             }
         }
