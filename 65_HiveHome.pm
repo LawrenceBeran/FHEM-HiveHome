@@ -402,13 +402,6 @@ sub _getHeatingProducts($$)
 	return @products;        
 }
 
-sub _getHotterTemp($$)
-{
-	my ($temp1, $temp2) = @_;
-    return $temp1 if ($temp1 >= $temp2);
-    return $temp2;
-}
-
 sub _insertNewDayElement($$)
 {
 	my ($dayElements_ref, $element) = @_;
@@ -422,14 +415,39 @@ sub _insertNewDayElement($$)
     {
         # The array has some values, lets check to see if the last element has the same temperature, 
         # only add the new element if the current temp is different to the previous temp
-        my ($prevTime, $prevTemp) = split(/-/, $dayElements_ref->[-1]);
-        my ($curTime, $curTemp) = split(/-/, $element);
-
-        if ($prevTemp != $curTemp)
+        if ($dayElements_ref->[-1]->{temp} != $element->{temp})
         {
             push(@{$dayElements_ref}, $element);            
         }
     }
+}
+
+sub _extractHeatingElements($)
+{
+	my ($heatingDayShedule) = @_;
+    # Remove the degrees characters from the temperatures...
+    $heatingDayShedule =~ s/°C//ig;
+    # Seperate each time-temp pair.
+    my @heatingDayElements = split(/ \/ /, $heatingDayShedule);
+    my @retDayElements;
+
+    foreach my $heatingElement (@heatingDayElements) 
+    { 
+        my $hashHeatingElement = {};        
+        # Seperate the time and the temp...
+        $hashHeatingElement->{element} = $heatingElement;
+        my ($heatingTime, $heatingTemp) = split(/-/, $heatingElement);
+        # Put them into a hash and push that into a new array.
+        $hashHeatingElement->{temp} = $heatingTemp;
+        $hashHeatingElement->{time} = $heatingTime;
+        # Seperate the time into hour and mins...
+        my ($heatingHour, $heatingMin) = split(/:/, $heatingTime);
+        $hashHeatingElement->{hour} = $heatingHour;
+        $hashHeatingElement->{min} = $heatingMin;
+        # Push the new hash into our return array.
+        push(@retDayElements, $hashHeatingElement);
+    }
+    return @retDayElements;
 }
 
 # TODO: Need to rethink the logic here...
@@ -479,101 +497,113 @@ sub _mergeDayHeatingShedule($$$$)
                 # Breakdown both schedules into their time/temp sections.
                 # UI schedule looks like - 00:00-15°C / 06:15-20°C / 08:30-15°C / 15:00-20°C / 23:00-15°C / 23:55-15°C
                 # could also have temp with decimals.
-                    
-                # Remove the degrees characters from the temperatures...
-                $heatingDayShedule =~ s/°C//ig;
-                $trvDayShedule =~ s/°C//ig;
 
-                # Seperate each time-temp pair.
-                my @heatingDayElements = split(/ \/ /, $heatingDayShedule);
-                my @trvDayElements = split(/ \/ /, $trvDayShedule);
+                # Convert the heating day schedule to an array of hashes(temp and time).
+                my @heatingDayElements = _extractHeatingElements($heatingDayShedule);
+                my @trvDayElements = _extractHeatingElements($trvDayShedule);
+
+                # Get the first heating and trv elements. These will both be for time 00:00
+                my $trvElement = shift(@trvDayElements);
+                my $heatingElement1 = shift(@heatingDayElements);
+                # Get the next heating elements.
+                my $heatingElement2 = shift(@heatingDayElements);
 
                 my @retDayElements;
 
-                # Pull the first element of each array
-                my $heatingElement = shift(@heatingDayElements);
-                my $trvElement = shift(@trvDayElements);
-
                 # Loop through the heating elements array (removing the first element each time).
                 my $finished = 0;
-
                 while ($finished == 0)
                 {
-                    if (defined($heatingElement) && defined($trvElement))
+                    if (defined($heatingElement1) && defined($trvElement))
                     {
                         # If both elements are the same.
-                        if ($heatingElement eq $trvElement)
+                        if ($heatingElement1->{element} eq $trvElement->{element})
                         {
-                            # Push either element into a new array.
-                            _insertNewDayElement(\@retDayElements, $heatingElement);
-                            # Get new elements from both arrays.
-                            $heatingElement = shift(@heatingDayElements);
+                            # Get next TRV day element.
+                            $trvElement = shift(@trvDayElements);
+                        }
+                        elsif ($heatingElement1->{time} eq $trvElement->{time})
+                        {
+                            # The times are the same, so we need to use the hotter temperature.
+                            if ($trvElement->{temp} > $heatingElement1->{temp})
+                            {
+                                $heatingElement1->{temp} = $trvElement->{temp};
+                                $heatingElement1->{element} = $heatingElement1->{time}."-".$heatingElement1->{temp};
+                            }
+                            # Get next TRV day element.
                             $trvElement = shift(@trvDayElements);
                         }
                         else
                         {
-                            # Seperate the time and the temp...
-                            my ($heatingTime, $heatingTemp) = split(/-/, $heatingElement);
-                            my ($trvTime, $trvTemp) = split(/-/, $trvElement);
+                            # At this point the TRV element will always be after the first heating element.
 
-                            if ($heatingTime eq $trvTime)
+                            # If there is another heating element
+                            if (defined($heatingElement2))
                             {
-                                # The times are the same, so we need to use the hotter temperature.
-                                _insertNewDayElement(\@retDayElements, "${heatingTime}-"._getHotterTemp($heatingTemp, $trvTemp));
-                                # Get new elements from both arrays.
-                                $heatingElement = shift(@heatingDayElements);
-                                $trvElement = shift(@trvDayElements);
-                            }
-                            else
-                            {
-                                # The times are different, we need to use the earlier time to create a new element.
-
-                                # Seperate the hours and the mins...
-                                my ($heatingHour, $heatingMin) = split(/:/, $heatingTime);
-                                my ($trvHour, $trvMin) = split(/:/, $trvTime);
-
-                                # If the heating element is earlier than the TRV element.
-                                # Note: Its not going to be the same as we have already performed that check!
-                                if ($heatingHour < $trvHour || ($heatingHour == $trvHour && $heatingMin <= $trvMin))
+                                # Is the TRV day element before the 2nd heating day element. I.e. its between our two heating elements.
+                                if ($heatingElement2->{hour} > $trvElement->{hour} || ($heatingElement2->{hour} == $trvElement->{hour} && $heatingElement2->{min} > $trvElement->{min}))
                                 {
-                                    # Push heating element into the return array.
-                                    _insertNewDayElement(\@retDayElements, $heatingElement);
-                                    # Get new element from heating array.
-                                    $heatingElement = shift(@heatingDayElements);
-
-                                    # Note: The new heating element may be earlier then the current trv element, we need recheck from the beginning!
+                                    # If the TRV element temp is greater than the first heating element temp.
+                                    if ($trvElement->{temp} > $heatingElement1->{temp})
+                                    {
+                                        # Push the TRV day element into the ret array.
+                                        _insertNewDayElement(\@retDayElements, $trvElement);
+                                        # Set heating element 1 to be the TRV day element.
+                                        $heatingElement1 = $trvElement;
+                                        # Get the next TRV day element.
+                                        $trvElement = shift(@trvDayElements);
+                                    }
+                                    else
+                                    {
+                                        # The TRV element temp is less than the heating element temp. We can drop this TRV day element.
+                                        # Get the next TRV day element.
+                                        $trvElement = shift(@trvDayElements);
+                                    }
                                 }
                                 else
                                 {
-                                    # The TRV element is earlier than the heating element.
-                                    # Push trv element into the return array.
-                                    _insertNewDayElement(\@retDayElements, $trvElement);
-                                    # Get new element from trv array.
-                                    $trvElement = shift(@trvDayElements);
+                                    # The TRV day element is after the 2nd heating element.
 
-                                    # Note: The new trv element may be earlier then the current heating element, we need recheck from the beginning!
+                                    # Push the 1st heating day element into the ret array.
+                                    _insertNewDayElement(\@retDayElements, $heatingElement1);
+                                    # Shift the heating2 day elements over into position one and get a new heating day element.
+                                    $heatingElement1 = $heatingElement2;
+                                    $heatingElement2 = shift(@heatingDayElements);
                                 }
+                            }
+                            else
+                            {
+                                # If there are no more heating elements...
+                                # Push the heating day element into the new array
+                                _insertNewDayElement(\@retDayElements, $heatingElement1);
+                                # Push the TRV day element into the new array.
+                                _insertNewDayElement(\@retDayElements, $trvElement);
+                                # Get the next TRV day element.
+                                $trvElement = shift(@trvDayElements);
+                                # Reset the heating day element to flag that there are no longer any heating elements.
+                                $heatingElement1 = undef;
                             }
                         }
                     }
-                    elsif (defined($heatingElement))
-                    {
-                        # Push heating element into the return array.
-                        _insertNewDayElement(\@retDayElements, $heatingElement);
-                        # Get new element from heating array.
-                        $heatingElement = shift(@heatingDayElements);
-                    }
                     elsif (defined($trvElement))
                     {
-                        # Push heating element into the return array.
+                        # Push TRV element into the return array.
                         _insertNewDayElement(\@retDayElements, $trvElement);
                         # Get new element from heating array.
                         $trvElement = shift(@trvDayElements);
                     }
+                    elsif (defined($heatingElement1))
+                    {
+                        # Push heating element into the return array.
+                        _insertNewDayElement(\@retDayElements, $heatingElement1);
+                        # Shift the heating2 day elements over into position one and get a new heating day element.
+                        $heatingElement1 = $heatingElement2;
+                        $heatingElement2 = shift(@heatingDayElements);
+                    }
                     else
                     {
                         # No more elements in either array. Time to finish!
-                        $finished = 1;
+                        $finished = 1;                        
                     }
                 }
 
@@ -581,7 +611,7 @@ sub _mergeDayHeatingShedule($$$$)
                 if ($hiveHomeClient->_getMaxNumbHeatingElements() >= $#retDayElements)
                 {
                     # The number of day elements are within the allowed range!
-                    $retDaySchedule = join(' / ', @retDayElements);
+                    $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
                 }
                 else
                 {
@@ -595,7 +625,7 @@ sub _mergeDayHeatingShedule($$$$)
                     #
                     # The number of day elements are within the allowed range!
 
-                    $retDaySchedule = join(' / ', @retDayElements);
+                    $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
                     Log(1, "_mergeDayHeatingShedule(${day}) - Too many elements - ${retDaySchedule}");
                 }
             }
@@ -736,8 +766,6 @@ sub HiveHome_Write_Device($$$$@)
 
     return $ret;
 }
-
-
 
 sub HiveHome_IsValidTemperature($)
 {

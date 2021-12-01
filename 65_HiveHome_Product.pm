@@ -731,7 +731,22 @@ sub HiveHome_Product_Notify($$)
 		<li><code>childLock &lt;lock&gt;</code><br><br>
 		Locks or unlocks the trvcontrol, locking the trv stops any tampering of the temperature setting by turning the dial.<br>
 		lock - 0 or 1. 0 to unlock the trv and 1 to lock it.
-		</li><br>	
+		</li><br>
+		<a name="calibrate"></a>
+		<li><code>calibrate &lt;state&gt;</code><br><br>
+		Starts or stops the trvcontrol calibration function.<br>
+		state - start or stop. start to start calibrating the trv and stop to stop calibrating if calibrating is in process.
+		</li><br>
+		<a name="valvePosition"></a>
+		<li><code>valvePosition &lt;position&gt;</code><br><br>
+		Does a thing.<br>
+		position - horizontal or vertical.
+		</li><br>
+		<a name="name"></a>
+		<li><code>name &lt;name&gt;</code><br><br>
+		Sets the name of the device.<br>
+		name - a string value representing the new name of the device. 
+		</li><br>
 	</ul>
 	<br><br>
 	<a name="HiveHome_ProductGet"></a>
