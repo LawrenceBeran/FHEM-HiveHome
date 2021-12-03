@@ -110,16 +110,14 @@ sub HiveHome_Product_Define($$)
 		if (lc($productType) eq "trvcontrol")
 		{
 			$hash->{NOTIFYDEV}	.= ",i:TYPE=HiveHome_Product:FILTER=i:productType=heating";
+			$attr{$name}{group} = 'HiveHome TRV' if (!exists($attr{$name}{group}));
+			$attr{$name}{setScheduleFromTRVs} = 0 if (!exists($attr{$name}{setScheduleFromTRVs}));
 		}
 
 		if (lc($productType) eq "heating") {
 			$attr{$name}{controlZoneHeating} = 1 if (!exists($attr{$name}{controlZoneHeating}));
 			$attr{$name}{controlZoneHeatingMinNumberOfTRVs} = 3 if (!exists($attr{$name}{controlZoneHeatingMinNumberOfTRVs}));
 			$attr{$name}{setScheduleFromTRVs} = 0 if (!exists($attr{$name}{setScheduleFromTRVs}));
-		}
-
-		if (lc($productType) eq "trvcontrol") {
-			$attr{$name}{group} = 'HiveHome TRV' if (!exists($attr{$name}{group}));
 		}
 
 		$attr{$name}{autoAlias} = '1' if (!exists($attr{$name}{autoAlias}));
@@ -408,7 +406,6 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'autoBoost',		$node->{internals}->{autoBoost});
 			SetInternal($shash, 'autoBoostTarget',	$node->{internals}->{autoBoostTarget});
 
-
 			SetInternal($shash, 'manufacturer',		$node->{internals}->{manufacturer});
 			SetInternal($shash, 'model',			$node->{internals}->{model});
 			SetInternal($shash, 'power',			$node->{internals}->{power});
@@ -481,6 +478,10 @@ sub HiveHome_Product_Parse($$$)
 				if (lc($node->{internals}->{calibrationStatus}) eq 'calibrating')
 				{
 					$myState .= ' (calibrating)';
+				}
+				elsif (lc($node->{internals}->{calibrationStatus}) eq 'needs calibrating')
+				{
+					$myState .= ' (needs calibrating)';
 				}
 				elsif (lc($node->{internals}->{calibrationStatus}) ne 'calibrated')
 				{
@@ -582,6 +583,8 @@ sub HiveHome_Product_Notify($$)
 					# Heating mode has changed
 					if (lc($name) eq 'mode' && defined($value))
 					{
+						# TODO: Change this attribute.
+						# This is a user attribute, it should not be used here....
 						my $heatingOverride = AttrVal($name, 'HEATING_OVERRIDE', undef);
 						if (defined($heatingOverride) && lc($heatingOverride) eq 'yes')
 						{
