@@ -450,33 +450,6 @@ sub _extractHeatingElements($)
     return @retDayElements;
 }
 
-# TODO: Need to rethink the logic here...
-#
-#   The heating schedule needs to cater for all TRVS. If DS TRVs are calling for more heat than US, we cannot have the US settings
-#   override the DS settings.
-#   Need to have some way to have the higher temp setting take precedence but still allow for the temp to go down if both require
-#   the temp to drop.
-#       TRV01:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
-#       TRV02:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV03:              00:00-15 / 06:15-20 /                                       08:30-15 /              17:00-20 /              23:00-15 / 23:55-15
-#       TRV04:              00:00-19 / 06:15-22 /               07:30-18 /                          15:00-21 /              18:00-22 /  23:00-18
-#       TRV05:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV06:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV07:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV08:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
-#       TRV09:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV10:              00:00-15 / 06:15-20 /                                       08:30-15 /              17:00-20 /              23:00-15 / 23:55-15
-#       TRV11:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV12:              00:00-18 / 06:15-21 /               07:30-17 /                          15:00-20 /              18:00-21 /  23:00-17
-#       TRV13:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-#       TRV14:              00:00-15 /              06:30-21 /              08:00-20 /                                      18:00-21 /  23:00-15
-
-#       NEW:                00:00-19 / 06:15-22 /   06:30-21 /  07:30-18 /  08:00-20 /  08:30-15 /  15:00-21 /  17:00-20 /  18:00-22 /  23:00-18 / 23:55-15
-#
-#       REQUIRED:           00:00-19 / 06:15-22 / 08:00-20 / 15:00-21 / 18:00-22 / 23:00-18
-
-#   Need to think about the ranges, not about set points. E.g. TRV05 sets the temp to 20 at 08:00, any temperature below this until its next setpoint at 18:00 should be ignored.
-
 sub _mergeDayHeatingShedule($$$$)
 {
 	my ($hiveHomeClient, $day, $heatingDayShedule, $trvDayShedule) = @_;
@@ -547,7 +520,7 @@ sub _mergeDayHeatingShedule($$$$)
                                     if ($trvElement->{temp} > $heatingElement1->{temp})
                                     {
                                         # Push the TRV day element into the ret array.
-                                        _insertNewDayElement(\@retDayElements, $trvElement);
+                                        _insertNewDayElement(\@retDayElements, $heatingElement1);
                                         # Set heating element 1 to be the TRV day element.
                                         $heatingElement1 = $trvElement;
                                         # Get the next TRV day element.
@@ -753,6 +726,9 @@ sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
                                     Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${trvProfile}) matches current - ${heatingProfile}");
                                 }
                                 else {
+                                    my $temp = $hash->{"WeekProfile_${loopDay}"};
+                                    $temp =~ s/°C//ig;
+                                    Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${heatingSchedule}) different to current - ${temp}");
                                     Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${trvProfile}) different to current - ${heatingProfile}");
                                     $heatingProfile = $trvProfile;
                                     $different = 1;
