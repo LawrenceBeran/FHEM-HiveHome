@@ -453,6 +453,26 @@ sub _is1stTimeBefore2ndTime($$)
     return 0;
 }
 
+our %ELEMENT_TYPE = (
+        HEATING => 1
+    ,   TRV => 2
+);
+
+sub _mergeElement1WithHottestTemperature($$$)
+{
+	my ($elementHeating, $elementTRV, $elementType) = @_;
+
+    # Default is to return elementHeating
+    my $retElement = $elementHeating;
+
+    if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
+        $retElement->{temp} = $elementTRV->{temp};
+        $retElement->{element} = $retElement->{time}."-".$retElement->{temp};
+        $_[2] = ($elementType ==  $ELEMENT_TYPE{TRV}) ? $ELEMENT_TYPE{HEATING} : $ELEMENT_TYPE{TRV};
+    }
+    return $retElement;
+}
+
 sub _mergeDayHeatingShedule($$$$)
 {
 	my ($hiveHomeClient, $day, $heatingDayShedule, $trvDayShedule) = @_;
@@ -492,11 +512,6 @@ sub _mergeDayHeatingShedule($$$$)
                 # Last added element.
                 my $lastAddedElement = undef;
 
-                my %ELEMENT_TYPE = (
-                        HEATING => 1
-                    ,   TRV => 2
-                );
-
                 # Last element type added.
                 my $lastAddedElementType = undef;
 
@@ -529,22 +544,15 @@ sub _mergeDayHeatingShedule($$$$)
                     elsif (defined($trvElement) && _is1stTimeBefore2ndTime($trvElement, $heatingElement))
                     {
                         # If the next element in chronological order is the trvElement
-                        if (!defined($lastAddedElement) || ($trvElement->{temp} > $lastAddedElement->{temp})) {
+                        if (defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV}) {
+                          # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
+                            $lastAddedElement = _mergeElement1WithHottestTemperature($trvElement, $heatingElementPrevious, $lastAddedElementType);
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                        } elsif (!defined($lastAddedElement) || ($trvElement->{temp} > $lastAddedElement->{temp})) {
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $trvElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
                             $lastAddedElementType = $ELEMENT_TYPE{TRV};
-                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV})
-                                || ($trvElement->{temp} >= $heatingElementPrevious->{temp})) {
-                           # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
-                            $lastAddedElement = $trvElement;
-                            if ($heatingElementPrevious->{temp} > $trvElement->{temp})
-                            {
-                                $lastAddedElement->{temp} = $heatingElementPrevious->{temp};
-                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
-                                $lastAddedElementType = $ELEMENT_TYPE{HEATING};
-                            }
-                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
                         }
                         $trvElementPrevious = $trvElement;
                         $trvElement = shift(@trvDayElements);                            
@@ -552,23 +560,16 @@ sub _mergeDayHeatingShedule($$$$)
                     elsif (defined($heatingElement) && _is1stTimeBefore2ndTime($heatingElement, $trvElement))
                     {
                         # If the next element in chronological order is the heatingElement
-                        if (!defined($lastAddedElement) || ($heatingElement->{temp} > $lastAddedElement->{temp})) {
+                        if (defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{HEATING}) {
+                            # If the last added element was also a heating element or its temperature is equal or greater than the previous TRV element.
+                            $lastAddedElement = _mergeElement1WithHottestTemperature($heatingElement, $trvElementPrevious, $lastAddedElementType);
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);                            
+                        } elsif (!defined($lastAddedElement) || ($heatingElement->{temp} > $lastAddedElement->{temp})) {
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $heatingElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
                             $lastAddedElementType = $ELEMENT_TYPE{HEATING};
-                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{HEATING})
-                                    || ($heatingElement->{temp} >= $trvElementPrevious->{temp})) {
-                            # If the last added element was also a heating element or its temperature is equal or greater than the previous TRV element.
-                            $lastAddedElement = $heatingElement;
-                            if ($trvElementPrevious->{temp} > $heatingElement->{temp})
-                            {
-                                $lastAddedElement->{temp} = $trvElementPrevious->{temp};
-                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
-                                $lastAddedElementType = $ELEMENT_TYPE{TRV};
-                            }
-                            _insertNewDayElement(\@retDayElements, $lastAddedElement);                            
-                        }
+                        } 
                         $heatingElementPrevious = $heatingElement;
                         $heatingElement = shift(@heatingDayElements);
                     }
