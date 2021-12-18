@@ -143,6 +143,14 @@ sub _mergeDayHeatingShedule($$$$)
                 # Last added element.
                 my $lastAddedElement = undef;
 
+                my %ELEMENT_TYPE = (
+                        HEATING => 1
+                    ,   TRV => 2
+                );
+
+                # Last element type added.
+                my $lastAddedElementType = undef;
+
                 my @retDayElements;
 
                 # Assumption is that TRV from is always equal to or later than Heating from 
@@ -153,7 +161,14 @@ sub _mergeDayHeatingShedule($$$$)
                     {
                         # If both elements are at the same time.
                         # Then add the hotter of the two to the output array.
-                        $lastAddedElement = ($trvElement->{temp} > $heatingElement->{temp}) ? $trvElement : $heatingElement;
+
+                        if ($trvElement->{temp} > $heatingElement->{temp}) {
+                            $lastAddedElement = $trvElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        } else {
+                            $lastAddedElement = $heatingElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        }
                         _insertNewDayElement(\@retDayElements, $lastAddedElement);
                         # Cache the current elements as the previous
                         $trvElementPrevious = $trvElement;
@@ -169,11 +184,19 @@ sub _mergeDayHeatingShedule($$$$)
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $trvElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } elsif ($trvElement->{temp} >= $heatingElementPrevious->{temp}) {
-                            # If the last added element was also a trv element.
-                            $lastAddedElement = _mergeElement1WithHottestTemperature($trvElement, $heatingElementPrevious);
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV})
+                                || ($trvElement->{temp} >= $heatingElementPrevious->{temp})) {
+                           # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
+                            $lastAddedElement = $trvElement;
+                            if ($heatingElementPrevious->{temp} > $trvElement->{temp})
+                            {
+                                $lastAddedElement->{temp} = $heatingElementPrevious->{temp};
+                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
+                                $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                            }
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } 
+                        }
                         $trvElementPrevious = $trvElement;
                         $trvElement = shift(@trvDayElements);                            
                     } 
@@ -184,10 +207,18 @@ sub _mergeDayHeatingShedule($$$$)
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $heatingElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } elsif ($heatingElement->{temp} >= $trvElementPrevious->{temp}) {
-                            # If the last added element was also a heating element.
-                            $lastAddedElement = _mergeElement1WithHottestTemperature($heatingElement, $trvElementPrevious);
-                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{HEATING})
+                                    || ($heatingElement->{temp} >= $trvElementPrevious->{temp})) {
+                            # If the last added element was also a heating element or its temperature is equal or greater than the previous TRV element.
+                            $lastAddedElement = $heatingElement;
+                            if ($trvElementPrevious->{temp} > $heatingElement->{temp})
+                            {
+                                $lastAddedElement->{temp} = $trvElementPrevious->{temp};
+                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
+                                $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                            }
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);                            
                         }
                         $heatingElementPrevious = $heatingElement;
                         $heatingElement = shift(@heatingDayElements);
@@ -259,10 +290,16 @@ my $day = HiveHome_GetWeekDay(undef);
 
 
 my %schedules;
-$schedules{"00:00-15 / 06:30-21 / 08:00-17 / 15:00-17 / 18:00-21 / 23:00-15"} = 1;
-$schedules{"00:00-15 / 06:15-20 / 08:30-15 / 17:00-20 / 23:00-15 / 23:55-15"} = 1;
-$schedules{"00:00-18 / 06:15-21 / 07:30-17 / 15:00-20 / 18:00-21 / 23:00-17"} = 1;
-$schedules{"00:00-15 / 08:00-20 / 22:00-15"} = 1;
+#$schedules{"00:00-15 / 06:30-21 / 08:00-17 / 15:00-17 / 18:00-21 / 23:00-15"} = 1;
+#$schedules{"00:00-15 / 06:15-20 / 08:30-15 / 17:00-20 / 23:00-15 / 23:55-15"} = 1;
+#$schedules{"00:00-18 / 06:15-21 / 07:30-17 / 15:00-20 / 18:00-21 / 23:00-17"} = 1;
+#$schedules{"00:00-15 / 08:00-20 / 22:00-15"} = 1;
+
+# The following does not work!
+$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
+$schedules{"00:00-18 / 06:30-20 / 09:00-19 / 15:00-20 / 18:00-20 / 23:00-17"} = 1;
+$schedules{"00:00-15 / 06:30-20 / 08:00-20 / 18:00-20.5 / 23:00-15"} = 1;
+$schedules{"00:00-15 / 06:30-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
 
 
 my $hiveHomeClient = undef;

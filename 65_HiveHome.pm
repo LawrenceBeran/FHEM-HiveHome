@@ -453,19 +453,6 @@ sub _is1stTimeBefore2ndTime($$)
     return 0;
 }
 
-sub _mergeElement1WithHottestTemperature($$)
-{
-	my ($element1, $element2) = @_;
-    # Default is to return element1
-    my $retElement = $element1;
-
-    if (defined($element2) && $element2->{temp} > $element1->{temp}) {
-        $retElement->{temp} = $element2->{temp};
-        $retElement->{element} = $retElement->{time}."-".$retElement->{temp};
-    }
-    return $retElement;
-}
-
 sub _mergeDayHeatingShedule($$$$)
 {
 	my ($hiveHomeClient, $day, $heatingDayShedule, $trvDayShedule) = @_;
@@ -505,6 +492,14 @@ sub _mergeDayHeatingShedule($$$$)
                 # Last added element.
                 my $lastAddedElement = undef;
 
+                my %ELEMENT_TYPE = (
+                        HEATING => 1
+                    ,   TRV => 2
+                );
+
+                # Last element type added.
+                my $lastAddedElementType = undef;
+
                 my @retDayElements;
 
                 # Assumption is that TRV from is always equal to or later than Heating from 
@@ -515,7 +510,14 @@ sub _mergeDayHeatingShedule($$$$)
                     {
                         # If both elements are at the same time.
                         # Then add the hotter of the two to the output array.
-                        $lastAddedElement = ($trvElement->{temp} > $heatingElement->{temp}) ? $trvElement : $heatingElement;
+
+                        if ($trvElement->{temp} > $heatingElement->{temp}) {
+                            $lastAddedElement = $trvElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        } else {
+                            $lastAddedElement = $heatingElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        }
                         _insertNewDayElement(\@retDayElements, $lastAddedElement);
                         # Cache the current elements as the previous
                         $trvElementPrevious = $trvElement;
@@ -531,11 +533,19 @@ sub _mergeDayHeatingShedule($$$$)
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $trvElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } elsif ($trvElement->{temp} >= $heatingElementPrevious->{temp}) {
-                            # If the last added element was also a trv element.
-                            $lastAddedElement = _mergeElement1WithHottestTemperature($trvElement, $heatingElementPrevious);
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV})
+                                || ($trvElement->{temp} >= $heatingElementPrevious->{temp})) {
+                           # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
+                            $lastAddedElement = $trvElement;
+                            if ($heatingElementPrevious->{temp} > $trvElement->{temp})
+                            {
+                                $lastAddedElement->{temp} = $heatingElementPrevious->{temp};
+                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
+                                $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                            }
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } 
+                        }
                         $trvElementPrevious = $trvElement;
                         $trvElement = shift(@trvDayElements);                            
                     } 
@@ -546,10 +556,18 @@ sub _mergeDayHeatingShedule($$$$)
                             # If its temperature is greater than the last added element's temperature
                             $lastAddedElement = $heatingElement;
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
-                        } elsif ($heatingElement->{temp} >= $trvElementPrevious->{temp}) {
-                            # If the last added element was also a heating element.
-                            $lastAddedElement = _mergeElement1WithHottestTemperature($heatingElement, $trvElementPrevious);
-                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        } elsif ((defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{HEATING})
+                                    || ($heatingElement->{temp} >= $trvElementPrevious->{temp})) {
+                            # If the last added element was also a heating element or its temperature is equal or greater than the previous TRV element.
+                            $lastAddedElement = $heatingElement;
+                            if ($trvElementPrevious->{temp} > $heatingElement->{temp})
+                            {
+                                $lastAddedElement->{temp} = $trvElementPrevious->{temp};
+                                $lastAddedElement->{element} = $lastAddedElement->{time}."-".$lastAddedElement->{temp};
+                                $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                            }
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);                            
                         }
                         $heatingElementPrevious = $heatingElement;
                         $heatingElement = shift(@heatingDayElements);
@@ -562,10 +580,13 @@ sub _mergeDayHeatingShedule($$$$)
                 }
 
                 # Check if the new day schedule has the allowed number of elements!
-                if (defined($hiveHomeClient) && $hiveHomeClient->_getMaxNumbHeatingElements() >= $#retDayElements) {
+                if (defined($hiveHomeClient) && $hiveHomeClient->_getMaxNumbHeatingElements() >= $#retDayElements)
+                {
                     # The number of day elements are within the allowed range!
                     $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
-                } else {
+                }
+                else
+                {
                     # TODO: There are too many elements in the day.
                     #       Loop through the elements and merge some of them together
                     #   
@@ -579,16 +600,22 @@ sub _mergeDayHeatingShedule($$$$)
                     $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
                     Log(1, "_mergeDayHeatingShedule(${day}) - Too many elements - ${retDaySchedule}");
                 }
-            } else {
+            }
+            else
+            {
                 # The current heating schedule is good
                 $retDaySchedule = $heatingDayShedule;
             }
-        } else {
-            # No current heating schedule is defined yet for the day
+        }
+        # No current heating schedule is defined yet for the day
+        else
+        {
             # Initialise it...
             $retDaySchedule = $trvDayShedule;
         }
-    } else {
+    }
+    else
+    {
         # No TRV schedule defined, return the current heating schedule for the day.
         $retDaySchedule = $heatingDayShedule;
     }
