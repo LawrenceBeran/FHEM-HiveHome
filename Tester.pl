@@ -96,12 +96,26 @@ our %ELEMENT_TYPE = (
     ,   TRV => 2
 );
 
+sub _copyDayElement($)
+{
+    my ($dayElement) = @_;
+
+    my $retElement = {
+            element =>  $dayElement->{element}
+        ,   temp =>     $dayElement->{temp}
+        ,   time =>     $dayElement->{time}
+        ,   hour =>     $dayElement->{hour}
+        ,   min =>     $dayElement->{min}
+    };
+    return $retElement;
+}
+
 sub _mergeElement1WithHottestTemperature($$$)
 {
 	my ($elementHeating, $elementTRV, $elementType) = @_;
 
     # Default is to return elementHeating
-    my $retElement = $elementHeating;
+    my $retElement = _copyDayElement($elementHeating);
 
     if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
         $retElement->{temp} = $elementTRV->{temp};
@@ -284,10 +298,17 @@ my %schedules;
 #$schedules{"00:00-15 / 08:00-20 / 22:00-15"} = 1;
 
 # The following does not work!
-$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
-$schedules{"00:00-18 / 06:30-20 / 09:00-19 / 15:00-20 / 18:00-20 / 23:00-17"} = 1;
+#$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
+#$schedules{"00:00-18 / 06:30-20 / 09:00-19 / 15:00-20 / 18:00-20 / 23:00-17"} = 1;
+#$schedules{"00:00-15 / 06:30-20 / 08:00-20 / 18:00-20.5 / 23:00-15"} = 1;
+#$schedules{"00:00-15 / 06:30-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
+
+
 $schedules{"00:00-15 / 06:30-20 / 08:00-20 / 18:00-20.5 / 23:00-15"} = 1;
-$schedules{"00:00-15 / 06:30-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
+$schedules{"00:00-15 / 07:00-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
+$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
+$schedules{"00:00-15 / 07:30-20 / 08:00-20 / 18:00-20.5 / 23:00-18 / 23:55-15"} = 1;
+$schedules{"00:00-18 / 06:30-20.5 / 10:00-19 / 17:00-20.5 / 23:00-17"} = 1;
 
 
 my $hiveHomeClient = undef;

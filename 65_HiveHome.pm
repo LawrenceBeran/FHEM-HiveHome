@@ -458,12 +458,26 @@ our %ELEMENT_TYPE = (
     ,   TRV => 2
 );
 
+sub _copyDayElement($)
+{
+    my ($dayElement) = @_;
+
+    my $retElement = {
+            element =>  $dayElement->{element}
+        ,   temp =>     $dayElement->{temp}
+        ,   time =>     $dayElement->{time}
+        ,   hour =>     $dayElement->{hour}
+        ,   min =>     $dayElement->{min}
+    };
+    return $retElement;
+}
+
 sub _mergeElement1WithHottestTemperature($$$)
 {
 	my ($elementHeating, $elementTRV, $elementType) = @_;
 
-    # Default is to return elementHeating
-    my $retElement = $elementHeating;
+    # Default is to return a copy of elementHeating
+    my $retElement = _copyDayElement($elementHeating);
 
     if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
         $retElement->{temp} = $elementTRV->{temp};
