@@ -933,39 +933,43 @@ sub HiveHome_ConvertUIDayProfileStringToCmdString($)
 {
     my $dayString = shift;
 
-    Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Enter - dayString - ".$dayString);
-
     my $retCmdString = undef;
 
-    # Remove the degrees characters from the temp...
-    $dayString =~ s/°C//ig;
+    if (defined($dayString)) {
+        Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Enter - dayString - ".$dayString);
 
-    # Parse the UI string from format: 
-    #       00:00-OFF / 06:30-ON / 07:15-OFF / 16:00-ON / 21:30-OFF
-    # into 
-    #       off,06:30,on,07:15,off,16:00,on,21:30,off
 
-    my @dayElements = split(/ \/ /, $dayString);
-    my $firstElement = 1;
+        # Remove the degrees characters from the temp...
+        $dayString =~ s/°C//ig;
 
-    foreach my $element (@dayElements)
-    {
-        # Seperate the time and the temp...
-        my ($time, $temp) = split(/-/, $element);
+        # Parse the UI string from format: 
+        #       00:00-OFF / 06:30-ON / 07:15-OFF / 16:00-ON / 21:30-OFF
+        # into 
+        #       off,06:30,on,07:15,off,16:00,on,21:30,off
 
-        if (defined($firstElement))
+        my @dayElements = split(/ \/ /, $dayString);
+        my $firstElement = 1;
+
+        foreach my $element (@dayElements)
         {
-            $retCmdString = $temp;
-            $firstElement = undef;
+            # Seperate the time and the temp...
+            my ($time, $temp) = split(/-/, $element);
+
+            if (defined($firstElement))
+            {
+                $retCmdString = $temp;
+                $firstElement = undef;
+            }
+            else
+            {
+                $retCmdString .= ','.$time.','.$temp;
+            }
         }
-        else
-        {
-            $retCmdString .= ','.$time.','.$temp;
-        }
+
+        Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Exit - retString - ".$retCmdString);
+    } else {
+        Log(2, "HiveHome_ConvertUIDayProfileStringToCmdString: Error - invalid 'undef' parameter");
     }
-
-    Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Exit - retString - ".$retCmdString);
-
     return $retCmdString;
 }
 
@@ -1057,12 +1061,12 @@ sub HiveHome_Write_Product($$$$@)
 	# For product types of: heating, hotwater, trvcontrol
 	$cmd = (lc($cmd) eq 'auto') ? 'schedule' : lc($cmd);
 	
-    if (!defined($shash->{productType}))
-    {
+    if (!defined($shash->{STATE}) || lc($shash->{STATE}) eq 'disconnected') {
+        # Test to see if the product is offline
+        Log(1, "HiveHome_Write_Product - Product is disconnected/offline ".$shash->{NAME});
+    } elsif (!defined($shash->{productType})) {
         Log(1, "HiveHome_Write_Product - productType not defined for ".$shash->{NAME});
-    }
-    else
-    {
+    } else {
         Log(4, "HiveHome_Write_Product(${cmd}): product type: ".$shash->{productType});
 
         if ($cmd eq 'weekprofile')
