@@ -120,7 +120,9 @@ sub _mergeElement1WithHottestTemperature($$$)
     if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
         $retElement->{temp} = $elementTRV->{temp};
         $retElement->{element} = $retElement->{time}."-".$retElement->{temp};
-        $_[2] = ($elementType ==  $ELEMENT_TYPE{TRV}) ? $ELEMENT_TYPE{HEATING} : $ELEMENT_TYPE{TRV};
+        if (defined($elementType)) {
+            $_[2] = ($elementType ==  $ELEMENT_TYPE{TRV}) ? $ELEMENT_TYPE{HEATING} : $ELEMENT_TYPE{TRV};
+        }
     }
     return $retElement;
 }
@@ -197,7 +199,7 @@ sub _mergeDayHeatingShedule($$$$)
                     {
                         # If the next element in chronological order is the trvElement
                         if (defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV}) {
-                          # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
+                            # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
                             $lastAddedElement = _mergeElement1WithHottestTemperature($trvElement, $heatingElementPrevious, $lastAddedElementType);
                             _insertNewDayElement(\@retDayElements, $lastAddedElement);
                         } elsif (!defined($lastAddedElement) || ($trvElement->{temp} > $lastAddedElement->{temp})) {
@@ -232,26 +234,20 @@ sub _mergeDayHeatingShedule($$$$)
                     }
                 }
 
+                my $maxNumbHeatingElements = (defined($hiveHomeClient)) ? $hiveHomeClient->_getMaxNumbHeatingElements() : 6;
+
                 # Check if the new day schedule has the allowed number of elements!
-                if (defined($hiveHomeClient) && $hiveHomeClient->_getMaxNumbHeatingElements() >= $#retDayElements)
+                if ($maxNumbHeatingElements >= $#retDayElements)
                 {
                     # The number of day elements are within the allowed range!
-                    $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
+                    $retDaySchedule =  join(" / ", map($_->{element}, @retDayElements));
                 }
                 else
                 {
-                    # TODO: There are too many elements in the day.
-                    #       Loop through the elements and merge some of them together
-                    #   
-                    #       Find the two closest elements in time/temp and remove one element and set the temp to the maximum so it covers all TRVS.
-                    #       E.g.    06:30-20 / 07:00-21 / 12:00-19
-                    #       The 6:30 element would need to be changed to 21 and the 07:00 removed.
-                    #               06:30-21 / 12:00-19
-                    #
-                    # The number of day elements are within the allowed range!
-
-                    $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
-                    Log(1, "_mergeDayHeatingShedule(${day}) - Too many elements - ${retDaySchedule}");
+                    # There are too many elements in the day.
+                    Log(2, "_mergeDayHeatingShedule(${day}) - Too many elements - ${maxNumbHeatingElements} - original schedule - ".join(" / ", map($_->{element}, @retDayElements)));
+                    $retDaySchedule = _reduceNumberOfElements($maxNumbHeatingElements, \@retDayElements);
+                    Log(2, "_mergeDayHeatingShedule(${day}) - Modified schedule - ${retDaySchedule}");
                 }
             }
             else
@@ -277,6 +273,52 @@ sub _mergeDayHeatingShedule($$$$)
     return $retDaySchedule;
 }
 
+#       Loop through the elements and merge some of them together
+#   
+#       Find the two closest elements in time/temp and remove one element and set the temp to the maximum so it covers all TRVS.
+#       E.g.    06:30-20 / 07:00-21 / 12:00-19
+#       The 6:30 element would need to be changed to 21 and the 07:00 removed.
+#               06:30-21 / 12:00-19
+sub _reduceNumberOfElements($$) 
+{
+	my ($maxNumbHeatinElements, $dayElements_ref) = @_;
+    my $retDaySchedule = undef;
+
+    my $tempDifference = 0.5;
+    my @retDayElements;
+
+    while ($#{$dayElements_ref} > $maxNumbHeatinElements) 
+    {
+        my $spliced = 0;
+        # Loop through the array looking for elements which are close temperature wise
+        for (my $i=0; $spliced == 0 && $i < $#{$dayElements_ref}; ++$i) {
+
+            # Check to see if the temp elements of the two array items match the current temperature difference.
+            if (abs($dayElements_ref->[$i]->{temp} - $dayElements_ref->[$i+1]->{temp}) <= $tempDifference) {
+
+                # Merge the two elements to create a new element with the hottest temperature
+                $dayElements_ref->[$i] = _mergeElement1WithHottestTemperature($dayElements_ref->[$i], $dayElements_ref->[$i+1], undef);
+                # Remove the second item 
+                splice(@{$dayElements_ref}, $i+1, 1);
+                # Check to see if the following item has the same temperature as the current item
+                if ($i+1 <= $#{$dayElements_ref} && $dayElements_ref->[$i]->{temp} == $dayElements_ref->[$i+1]->{temp}) {
+                    # Remove the second item if so
+                    splice(@{$dayElements_ref}, $i+1, 1);
+                }
+                # Exit the current loop to see if we have reduced the array size enough.
+                $spliced = 1;
+            }
+        }
+
+        if ($spliced == 0) {
+            $tempDifference += 0.5;
+        }
+    }
+
+    $retDaySchedule =  join(" / ", map($_->{element}, (@{$dayElements_ref})));
+
+    return $retDaySchedule;
+}
 
 sub Log
 {
@@ -304,12 +346,15 @@ my %schedules;
 #$schedules{"00:00-15 / 06:30-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
 
 
-$schedules{"00:00-15 / 06:30-20 / 08:00-20 / 18:00-20.5 / 23:00-15"} = 1;
-$schedules{"00:00-15 / 07:00-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
-$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
-$schedules{"00:00-15 / 07:30-20 / 08:00-20 / 18:00-20.5 / 23:00-18 / 23:55-15"} = 1;
-$schedules{"00:00-18 / 06:30-20.5 / 10:00-19 / 17:00-20.5 / 23:00-17"} = 1;
+#$schedules{"00:00-15 / 06:30-20 / 08:00-20 / 18:00-20.5 / 23:00-15"} = 1;
+#$schedules{"00:00-15 / 07:00-20 / 08:00-18 / 18:00-20 / 23:00-15 / 23:55-15"} = 1;
+#$schedules{"00:00-15 / 06:30-20.5 / 08:00-19 / 18:00-20.5 / 23:00-15"} = 1;
+#$schedules{"00:00-15 / 07:30-20 / 08:00-20 / 18:00-20.5 / 23:00-18 / 23:55-15"} = 1;
+#$schedules{"00:00-18 / 06:30-20.5 / 10:00-19 / 17:00-20.5 / 23:00-17"} = 1;
 
+# Test a schedule with more than the minimum number of events
+$schedules{"00:00-18 / 06:30-21 / 07:00-20 / 07:30-21 / 10:00-19 / 17:00-20.5 / 17:30-20 / 18:00-20.5 / 20:00-19 / 23:00-17"} = 1;
+$schedules{"00:00-18 / 23:00-17"} = 1;
 
 my $hiveHomeClient = undef;
 
