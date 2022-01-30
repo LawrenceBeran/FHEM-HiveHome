@@ -38,6 +38,7 @@ sub HiveHome_Product_Initialize($)
 						. "temperatureOffset:${tempoffsetlist} "
 						. "controlZoneHeating:1,0 "
 						. "controlZoneHeatingMinNumberOfTRVs "
+						. "setScheduleFromTRVs:1,0 "
 						. $readingFnAttributes;
 
 	Log(5, "HiveHome_Product_Initialize: exit");
@@ -87,33 +88,36 @@ sub HiveHome_Product_Define($$)
 	#
 	# The logic is a bit screwed up here...
 	# To get the devices internals set so that the Set command works we need to ensure the following are called
-	#	- Hive_Hub_Initialise
-	#	- Hive_Hub_Define (physical device - doesnt set any internals)
+	#	- HiveHome_Initialise
+	#	- HiveHome_Define (physical device - doesnt set any internals)
 	#	- Hive_Initialise (node)
 	#	- Hive_Define
-	#	-   Calls Hive_Hub_UpdateNodes
+	#	-   Calls HiveHome_UpdateNodes
 	#	-		Calls Dispatch for each node which calls --> Hive_Parse
-	# Hive_HubUpdateNodes gets all nodes details even if they havent been defined yet, this causes autocreate requests
+	# HiveHome_UpdateNodes gets all nodes details even if they havent been defined yet, this causes autocreate requests
 	# which in turn cause cannot autocreate as the device already exists.
-	# So added a parameter to Hive_Hub_UpdateNodes which triggers whether to call Dispatch if the node exists (has been defined yet)
+	# So added a parameter to HiveHome_UpdateNodes which triggers whether to call Dispatch if the node exists (has been defined yet)
 	#
 
-	# Need to call Hive_Hub_UpdateNodes....
+	# Need to call HiveHome_UpdateNodes....
 	if (defined($hash->{IODev}{InitNode}))
 	{
 		($hash->{IODev}{InitNode})->($hash->{IODev}, 1);
 
 		# Only interested in events from the "global" device for now.
 		$hash->{NOTIFYDEV}	= "global";
-
+		# If the product is a trv, then they are interested when the heating schedule changes.
 		if (lc($productType) eq "trvcontrol")
 		{
 			$hash->{NOTIFYDEV}	.= ",i:TYPE=HiveHome_Product:FILTER=i:productType=heating";
+			$attr{$name}{group} = 'HiveHome TRV' if (!exists($attr{$name}{group}));
+			$attr{$name}{setScheduleFromTRVs} = 0 if (!exists($attr{$name}{setScheduleFromTRVs}));
 		}
 
 		if (lc($productType) eq "heating") {
 			$attr{$name}{controlZoneHeating} = 1 if (!exists($attr{$name}{controlZoneHeating}));
 			$attr{$name}{controlZoneHeatingMinNumberOfTRVs} = 3 if (!exists($attr{$name}{controlZoneHeatingMinNumberOfTRVs}));
+			$attr{$name}{setScheduleFromTRVs} = 0 if (!exists($attr{$name}{setScheduleFromTRVs}));
 		}
 
 		$attr{$name}{autoAlias} = '1' if (!exists($attr{$name}{autoAlias}));
@@ -186,13 +190,13 @@ sub HiveHome_Product_SetAlias($$)
 	if (defined($attVal) && $attVal eq '1' && $init_done)
 	{
 		my $friendlyName = InternalVal($name, 'name', undef);
-		my $deviceType = InternalVal($name, 'deviceType', undef);
-		if (defined($friendlyName) && defined($deviceType))
+		my $productType = InternalVal($name, 'productType', undef);
+		if (defined($friendlyName) && defined($productType))
 		{
 			my $alias = AttrVal($name, 'alias', undef);
-			if (!defined($alias) || ($alias ne "${friendlyName} ${deviceType}"))
+			if (!defined($alias) || ($alias ne "${friendlyName} ${productType}"))
 			{
-				fhem("attr ${name} alias ${friendlyName} ${deviceType}");
+				fhem("attr ${name} alias ${friendlyName} ${productType}");
 			}
 		}
 	}
@@ -252,6 +256,10 @@ sub HiveHome_Product_Attr($$$$)
 		# TODO: Only valid for a heating type product.
 		# TODO: Update existing settings. Can wait until the next refresh for details displayed to the screen, 
 		# 		but the current temperature needs to be corrected against the offset.
+	}
+	elsif ($attrName eq 'setScheduleFromTRVs')
+	{
+		# TODO:
 	}
 
 	Log(5, "HiveHome_Product_Attr: exit");
@@ -363,15 +371,21 @@ sub HiveHome_Product_Parse($$$)
 			}
 
 			# This is a hash that needs breaking down...
+			my $weekProfileChanged = undef;
 			my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
 			foreach my $day (@daysofweek) 
 			{
 				# TODO: need to ensure the schedule temperatures are offset.
-
 				if (!defined($node->{internals}->{schedule}) || !defined($node->{internals}->{schedule}->{$day}) || "" ne $node->{internals}->{schedule}->{$day})
 				{
-					Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - ".$node->{internals}->{schedule}->{$day});
-					SetInternal($shash, "WeekProfile_${day}", $node->{internals}->{schedule}->{$day});
+					if (lc(InternalVal($shash->{NAME}, "WeekProfile_${day}", '')) ne lc($node->{internals}->{schedule}->{$day}))
+					{
+						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - '".InternalVal($shash->{NAME}, "WeekProfile_${day}", '')."'");
+						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - '".$node->{internals}->{schedule}->{$day}."'");
+						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - modified");
+						SetInternal($shash, "WeekProfile_${day}", $node->{internals}->{schedule}->{$day});
+						$weekProfileChanged = 1;
+					}
 				}
 				else
 				{
@@ -392,7 +406,6 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'autoBoost',		$node->{internals}->{autoBoost});
 			SetInternal($shash, 'autoBoostTarget',	$node->{internals}->{autoBoostTarget});
 
-
 			SetInternal($shash, 'manufacturer',		$node->{internals}->{manufacturer});
 			SetInternal($shash, 'model',			$node->{internals}->{model});
 			SetInternal($shash, 'power',			$node->{internals}->{power});
@@ -403,7 +416,6 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'mountingModeActive',$node->{internals}->{mountingModeActive} ? "true" : "false");
 			SetInternal($shash, 'mountingMode',		$node->{internals}->{mountingMode});
 			SetInternal($shash, 'eui64',			$node->{internals}->{eui64});
-
 
 			if (defined($node->{internals}->{holidayMode}))
 			{
@@ -467,6 +479,10 @@ sub HiveHome_Product_Parse($$$)
 				{
 					$myState .= ' (calibrating)';
 				}
+				elsif (lc($node->{internals}->{calibrationStatus}) eq 'needs calibrating')
+				{
+					$myState .= ' (needs calibrating)';
+				}
 				elsif (lc($node->{internals}->{calibrationStatus}) ne 'calibrated')
 				{
 					$myState .= ' (requires calibrating)';
@@ -490,6 +506,18 @@ sub HiveHome_Product_Parse($$$)
 			readingsBulkUpdate($shash, "state", $myState);
 
 			readingsEndUpdate($shash, 1);
+
+
+			if (defined($weekProfileChanged))
+			{
+				Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile has been modified");
+				# Call the parent (IODev) HiveHome_TRVScheduleModified function.
+				if (defined($shash->{IODev}{TRVScheduleModified}))
+				{
+					Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): Calling HiveHome...");
+					($shash->{IODev}{TRVScheduleModified})->($shash->{IODev}, $shash);
+				}
+			}			
 		}
 		HiveHome_Product_SetAlias($shash, $shash->{NAME});
 	}
@@ -528,14 +556,9 @@ sub HiveHome_Product_Notify($$)
 
 		HiveHome_Product_SetAlias($own_hash, $ownName);
 	}
-
 	
-	# TODO: If the Heating is boosted then all the trvs in the same zone must also be boosted.
-	#		When the heating reverts back to its original heating mode, the trvs must also revert back to their previous mode.
-	#			trvs and heating store the previous heating mode in:  props->Previous 
 
-	if (	(lc($dev_hash->{TYPE}) eq "hivehome_product" && lc($dev_hash->{productType} eq "heating"))
-		&& 	(lc($own_hash->{TYPE}) eq "hivehome_product" && lc($own_hash->{productType} eq "trvcontrol")))
+	if (lc($dev_hash->{TYPE}) eq "hivehome_product" && lc($own_hash->{TYPE}) eq "hivehome_product")
 	{
 #		my $devFriendlyName = $dev_hash->{name};
 #		my $ownFriendlyName = $own_hash->{name};
@@ -544,44 +567,52 @@ sub HiveHome_Product_Notify($$)
 		# If the TRV is in the same zone as the heating product
 		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
 		{
-			# What is the event?
-			foreach my $event (@{$events}) 
+			# If a zone Heating is being boosted then all the trvs in the same zone must also be boosted.
+			# When the heating reverts back to its original heating mode, the trvs must also revert back to their previous mode.
+			# trvs and heating store the previous heating mode in:  props->Previous 
+			if (lc($dev_hash->{productType}) eq "heating" && lc($own_hash->{productType}) eq "trvcontrol")
 			{
-				$event = "" if(!defined($event));
-
-				my ($name, $value) = split(": ", $event, 2);
-				Log(5, "HiveHome_Product_Notify(${ownName}): Event - ${name} Value - ".toString($value));
-
-				# Heating mode has changed
-				if (lc($name) eq 'mode' && defined($value))
+				# What is the event?
+				foreach my $event (@{$events}) 
 				{
-					my $heatingOverride = AttrVal($name, 'HEATING_OVERRIDE', undef);
-					if (defined($heatingOverride) && lc($heatingOverride) eq 'yes')
+					$event = "" if(!defined($event));
+
+					my ($name, $value) = split(": ", $event, 2);
+					Log(5, "HiveHome_Product_Notify(${ownName}): Event - ${name} Value - ".toString($value));
+
+					# Heating mode has changed
+					if (lc($name) eq 'mode' && defined($value))
 					{
-						Log(4, "HiveHome_Product_Notify(${ownName}): HEATING_OVERRIDE attribute set, not changing its heating mode!");
-					}
-					else
-					{
-						# The heating has been boosted!
-						if (lc($value) eq 'boost')
+						# TODO: Change this attribute.
+						# This is a user attribute, it should not be used here....
+						my $heatingOverride = AttrVal($name, 'HEATING_OVERRIDE', undef);
+						if (defined($heatingOverride) && lc($heatingOverride) eq 'yes')
 						{
-							my $cmd = "set ${ownName} boost ". ReadingsVal($devName, 'target', 21).' '.InternalNum($devName, 'boost', 30);
-							Log(4, "HiveHome_Product_Notify(${ownName}): ${cmd}");
-							fhem($cmd);
+							Log(4, "HiveHome_Product_Notify(${ownName}): HEATING_OVERRIDE attribute set, not changing its heating mode!");
 						}
 						else
 						{
-							# What is my current mode? If I am boost, then return to schedule
-							my $myMode = lc(ReadingsVal($ownName, 'mode', ''));
-							if ($myMode eq 'boost')
+							# The heating has been boosted!
+							if (lc($value) eq 'boost')
 							{
-								my $cmd = "set ${ownName} ".InternalVal($ownName, 'previousMode', 'schedule');
+								my $cmd = "set ${ownName} boost ". ReadingsVal($devName, 'target', 21).' '.InternalNum($devName, 'boost', 30);
 								Log(4, "HiveHome_Product_Notify(${ownName}): ${cmd}");
 								fhem($cmd);
 							}
+							else
+							{
+								# What is my current mode? If I am boost, then return to schedule
+								my $myMode = lc(ReadingsVal($ownName, 'mode', ''));
+								if ($myMode eq 'boost')
+								{
+									my $cmd = "set ${ownName} ".InternalVal($ownName, 'previousMode', 'schedule');
+									Log(4, "HiveHome_Product_Notify(${ownName}): ${cmd}");
+									fhem($cmd);
+								}
+							}
+							#### TODO
+							## After calling fhem we should force parse to refresh the UI with the change.
 						}
-						#### TODO
-						## After calling fhem we should force parse to refresh the UI with the change.
 					}
 				}
 			}
@@ -713,6 +744,21 @@ sub HiveHome_Product_Notify($$)
 		<li><code>childLock &lt;lock&gt;</code><br><br>
 		Locks or unlocks the trvcontrol, locking the trv stops any tampering of the temperature setting by turning the dial.<br>
 		lock - 0 or 1. 0 to unlock the trv and 1 to lock it.
+		</li><br>
+		<a name="calibrate"></a>
+		<li><code>calibrate &lt;state&gt;</code><br><br>
+		Starts or stops the trvcontrol calibration function.<br>
+		state - start or stop. start to start calibrating the trv and stop to stop calibrating if calibrating is in process.
+		</li><br>
+		<a name="valvePosition"></a>
+		<li><code>valvePosition &lt;position&gt;</code><br><br>
+		Does a thing.<br>
+		position - horizontal or vertical.
+		</li><br>
+		<a name="name"></a>
+		<li><code>name &lt;name&gt;</code><br><br>
+		Sets the name of the device.<br>
+		name - a string value representing the new name of the device. 
 		</li><br>
 	</ul>
 	<br><br>

@@ -62,23 +62,23 @@ sub HiveHome_Action_Define($$)
 	#
 	# The logic is a bit screwed up here...
 	# To get the devices internals set so that the Set command works we need to ensure the following are called
-	#	- Hive_Hub_Initialise
-	#	- Hive_Hub_Define (physical device - doesnt set any internals)
+	#	- HiveHome_Initialise
+	#	- HiveHome_Define (physical device - doesnt set any internals)
 	#	- Hive_Initialise (node)
 	#	- Hive_Define
-	#	-   Calls Hive_Hub_UpdateNodes
+	#	-   Calls HiveHome_UpdateNodes
 	#	-		Calls Dispatch for each node which calls --> Hive_Parse
-	# Hive_HubUpdateNodes gets all nodes details even if they havent been defined yet, this causes autocreate requests
+	# HiveHome_UpdateNodes gets all nodes details even if they havent been defined yet, this causes autocreate requests
 	# which in turn cause cannot autocreate as the device already exists.
-	# So added a parameter to Hive_Hub_UpdateNodes which triggers whether to call Dispatch if the node exists (has been defined yet)
+	# So added a parameter to HiveHome_UpdateNodes which triggers whether to call Dispatch if the node exists (has been defined yet)
 	#
 
-	# Need to call Hive_Hub_UpdateNodes....
+	# Need to call HiveHome_UpdateNodes....
 	if (defined($hash->{IODev}{InitNode}))
 	{
 		($hash->{IODev}{InitNode})->($hash->{IODev}, 1);
 
-		if (1 == $init_done) 
+		if ($init_done) 
 		{
 			$attr{$name}{room}  = 'HiveHome';
 			$attr{$name}{icon} = 'file_json-ld2';
@@ -129,7 +129,7 @@ sub HiveHome_Action_SetAlias($$)
 				fhem("attr ${name} alias ${friendlyName}");
 			}
 		}
-	}	
+	}
 	Log(5, "HiveHome_Action_SetAlias: exit");
 	return undef;
 }

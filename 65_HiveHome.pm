@@ -26,7 +26,7 @@ sub _getHiveHomeInterface($)
     return $hash->{HIVEHOME}{interface};
 }
 
-sub HiveHome_Initialize
+sub HiveHome_Initialize($)
 {
 	my ($hash) = @_;
 
@@ -71,7 +71,10 @@ sub HiveHome_Define($$)
 
 	# Interface used by the hubs children to communicate with the physical hub
 	$hash->{InitNode} = \&HiveHome_UpdateNodes;
-
+    # Interface used by the hubs children to say a zone has been boosted
+    $hash->{ZoneBoosted} = \&HiveHome_ZoneBoosted;
+    # Interface used by the hubs children to say a zone has been boosted
+    $hash->{TRVScheduleModified} = \&HiveHome_TRVScheduleModified;
 
 	# Create a timer to get object details
 	InternalTimer(gettimeofday()+1, "HiveHome_GetUpdate", $hash, 0);
@@ -123,6 +126,42 @@ sub HiveHome_GetUpdate()
 	Log(5, "HiveHome_GetUpdate: exit");
 
 	return undef;
+}
+
+############################################################################
+# This function boostes all TRVs that make up a zone
+############################################################################
+
+sub HiveHome_ZoneBoosted($$)
+{
+	my ($hash, $fromDefine) = @_;
+
+	Log(5, "HiveHome_ZoneBoosted: enter");
+
+	Log(5, "HiveHome_ZoneBoosted: exit");
+}
+
+sub HiveHome_TRVScheduleModified($$)
+{
+	my ($hash, $fromDefine) = @_;
+
+	Log(5, "HiveHome_TRVScheduleModified: enter");
+    
+    Log(4, "HiveHome_TRVScheduleModified: from device: ".$fromDefine->{NAME});
+
+    # NOTE: This function is called from HiveHome_Product_Parse which in turn is called from HiveHome_UpdateNodes using Dispatch.
+    #       We just want to flag at this point that the weekProfile has been modified and then use the flag in
+    #       HiveHome_UpdateNodes after all child items have been processed to determine whether the parents (zone)
+    #       heating weekProfile needs to be updated.
+   
+    my $zone = InternalVal($fromDefine->{NAME}, 'zone', undef);
+    if (defined($zone))
+    {
+        Log(4, "HiveHome_TRVScheduleModified: zone: ".$zone);
+        $hash->{helper}{$zone} = 1;
+    }
+
+	Log(5, "HiveHome_TRVScheduleModified: exit");
 }
 
 ############################################################################
@@ -203,9 +242,6 @@ sub HiveHome_UpdateNodes()
                     {
                         # We have found a matching TRV
                         my $trv = $product;
-
-                        # TODO: deal with the device capabilities
-#                        $trv->{deviceCapabilities}
 
                         $trv->{deviceType} = $trvDevice->{type};
 
@@ -330,10 +366,10 @@ sub HiveHome_UpdateNodes()
                     Log(2, "HiveHome_UpdateNodes: Could not find heating product for zone ".$zone);
                 }
             }
+
+            HiveHome_SetZoneScheduleByZoneTRVSchedules($hash);
+
         }
-
-
-
 
         ### Get the latest used token
         my $token = $hiveHomeClient->getToken();
@@ -343,6 +379,405 @@ sub HiveHome_UpdateNodes()
     }
 
 	Log(5, "HiveHome_UpdateNodes: exit");
+}
+
+sub _getHeatingProducts($$)
+{
+	my ($productType, $zone) = @_;
+
+	my @products;
+
+    foreach my $device ( sort keys %{$modules{HiveHome_Product}{defptr}} )
+    {
+        my $hash=$modules{HiveHome_Product}{defptr}{$device};
+       
+        next if (!defined($hash->{IODev}) || !defined($hash->{NAME}) || !defined($hash->{productType}));
+        next if (lc($hash->{productType}) ne lc($productType));
+        # If the zone parameter is defined, then reject all devices that are in a different zone.
+        next if (defined($zone) && lc($hash->{zone}) ne lc($zone));
+
+   		push (@products, $hash->{NAME});
+    }
+
+	return @products;        
+}
+
+sub _insertNewDayElement($$)
+{
+	my ($dayElements_ref, $element) = @_;
+
+    if (!defined(@{$dayElements_ref}[-1])) {
+        # If the array is empty, just add the passed element to the array
+        push(@{$dayElements_ref}, $element);
+    } else {
+        # The array has some values, lets check to see if the last element has the same temperature, 
+        # only add the new element if the current temp is different to the previous temp
+        if ($dayElements_ref->[-1]->{temp} != $element->{temp}) {
+            push(@{$dayElements_ref}, $element);
+        }
+    }
+}
+
+sub _extractHeatingElements($)
+{
+	my ($heatingDayShedule) = @_;
+    # Remove the degrees characters from the temperatures...
+    $heatingDayShedule =~ s/°C//ig;
+    # Seperate each time-temp pair.
+    my @heatingDayElements = split(/ \/ /, $heatingDayShedule);
+    my @retDayElements;
+
+    foreach my $heatingElement (@heatingDayElements) 
+    { 
+        my $hashHeatingElement = {};        
+        # Seperate the time and the temp...
+        $hashHeatingElement->{element} = $heatingElement;
+        my ($heatingTime, $heatingTemp) = split(/-/, $heatingElement);
+        # Put them into a hash and push that into a new array.
+        $hashHeatingElement->{temp} = $heatingTemp;
+        $hashHeatingElement->{time} = $heatingTime;
+        # Seperate the time into hour and mins...
+        my ($heatingHour, $heatingMin) = split(/:/, $heatingTime);
+        $hashHeatingElement->{hour} = $heatingHour;
+        $hashHeatingElement->{min} = $heatingMin;
+        # Push the new hash into our return array.
+        push(@retDayElements, $hashHeatingElement);
+    }
+    return @retDayElements;
+}
+
+sub _is1stTimeBefore2ndTime($$) 
+{
+	my ($time1, $time2) = @_;
+    return 1 if (!defined($time2) || $time1->{hour} < $time2->{hour} || ($time1->{hour} == $time2->{hour} && $time1->{min} < $time2->{min}));
+    return 0;
+}
+
+our %ELEMENT_TYPE = (
+        HEATING => 1
+    ,   TRV => 2
+);
+
+sub _copyDayElement($)
+{
+    my ($dayElement) = @_;
+
+    my $retElement = {
+            element =>  $dayElement->{element}
+        ,   temp =>     $dayElement->{temp}
+        ,   time =>     $dayElement->{time}
+        ,   hour =>     $dayElement->{hour}
+        ,   min =>     $dayElement->{min}
+    };
+    return $retElement;
+}
+
+sub _mergeElement1WithHottestTemperature($$$)
+{
+	my ($elementHeating, $elementTRV, $elementType) = @_;
+
+    # Default is to return a copy of elementHeating
+    my $retElement = _copyDayElement($elementHeating);
+
+    if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
+        $retElement->{temp} = $elementTRV->{temp};
+        $retElement->{element} = $retElement->{time}."-".$retElement->{temp};
+        if (defined($elementType)) {
+            $_[2] = ($elementType ==  $ELEMENT_TYPE{TRV}) ? $ELEMENT_TYPE{HEATING} : $ELEMENT_TYPE{TRV};
+        }
+    }
+    return $retElement;
+}
+
+#       Loop through the elements and merge some of them together
+#   
+#       Find the two closest elements in time/temp and remove one element and set the temp to the maximum so it covers all TRVS.
+#       E.g.    06:30-20 / 07:00-21 / 12:00-19
+#       The 6:30 element would need to be changed to 21 and the 07:00 removed.
+#               06:30-21 / 12:00-19
+sub _reduceNumberOfElements($$) 
+{
+	my ($maxNumbHeatinElements, $dayElements_ref) = @_;
+
+    my $tempDifference = 0.5;
+
+    while ($#{$dayElements_ref} > $maxNumbHeatinElements) 
+    {
+        my $spliced = 0;
+        # Loop through the array looking for elements which are close temperature wise
+        for (my $i=0; $spliced == 0 && $i < $#{$dayElements_ref}; ++$i) {
+
+            # Check to see if the temp elements of the two array items match the current temperature difference.
+            if (abs($dayElements_ref->[$i]->{temp} - $dayElements_ref->[$i+1]->{temp}) <= $tempDifference) {
+
+                # Merge the two elements to create a new element with the hottest temperature
+                $dayElements_ref->[$i] = _mergeElement1WithHottestTemperature($dayElements_ref->[$i], $dayElements_ref->[$i+1], undef);
+                # Remove the second item 
+                splice(@{$dayElements_ref}, $i+1, 1);
+                # Check to see if the following item has the same temperature as the current item
+                if ($i+1 <= $#{$dayElements_ref} && $dayElements_ref->[$i]->{temp} == $dayElements_ref->[$i+1]->{temp}) {
+                    # Remove the second item if so
+                    splice(@{$dayElements_ref}, $i+1, 1);
+                }
+                # Exit the current loop to see if we have reduced the array size enough.
+                $spliced = 1;
+            }
+        }
+
+        if ($spliced == 0) {
+            $tempDifference += 0.5;
+        }
+    }
+
+    return join(" / ", map($_->{element}, (@{$dayElements_ref})));
+}
+
+sub _mergeDayHeatingShedule($$$$)
+{
+	my ($hiveHomeClient, $day, $heatingDayShedule, $trvDayShedule) = @_;
+    my $retDaySchedule = undef;
+
+    if (defined($trvDayShedule))  {
+        Log(4, "_mergeDayHeatingShedule(${day}) - trv:     ${trvDayShedule}");
+
+        # If we have a heating schedule defined for the day
+        if (defined($heatingDayShedule)) {
+            # And a string compare does not match
+            if ($heatingDayShedule ne $trvDayShedule) {
+                Log(4, "_mergeDayHeatingShedule(${day}) - heating: ${heatingDayShedule}");
+
+                # Breakdown both schedules into their time/temp sections.
+                # UI schedule looks like - 00:00-15°C / 06:15-20°C / 08:30-15°C / 15:00-20°C / 23:00-15°C / 23:55-15°C
+                # could also have temp with decimals.
+
+                # Convert the heating day schedule to an array of hashes(temp and time).
+                my @heatingDayElements = _extractHeatingElements($heatingDayShedule);
+                my @trvDayElements = _extractHeatingElements($trvDayShedule);
+
+#                Log(1, "Heating ".Dumper(@heatingDayElements));
+#                Log(1, "TRV     ".Dumper(@trvDayElements));
+
+                # Get the first heating and trv elements. These will both be for time 00:00
+                my $trvElement = shift(@trvDayElements);
+                my $heatingElement = shift(@heatingDayElements);
+
+                # Previous read elements.
+                my $trvElementPrevious = $trvElement;
+                my $heatingElementPrevious = $heatingElement;
+
+                # Last added element.
+                my $lastAddedElement = undef;
+
+                # Last element type added.
+                my $lastAddedElementType = undef;
+
+                my @retDayElements;
+
+                # Assumption is that TRV from is always equal to or later than Heating from 
+                my $finished = 0;
+                while ($finished == 0) {
+                    if ((defined($heatingElement) && defined($trvElement)) && ($heatingElement->{time} eq $trvElement->{time})) {
+                        # If both elements are at the same time.
+                        # Then add the hotter of the two to the output array.
+
+                        if ($trvElement->{temp} > $heatingElement->{temp}) {
+                            $lastAddedElement = $trvElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        } else {
+                            $lastAddedElement = $heatingElement;
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        }
+                        _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                        # Cache the current elements as the previous
+                        $trvElementPrevious = $trvElement;
+                        $heatingElementPrevious = $heatingElement;
+                        # Get the next TRV element.
+                        $trvElement = shift(@trvDayElements);                            
+                        $heatingElement = shift(@heatingDayElements);
+                    } elsif (defined($trvElement) && _is1stTimeBefore2ndTime($trvElement, $heatingElement)) {
+                        # If the next element in chronological order is the trvElement
+                        if (defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{TRV}) {
+                            # If the last added element was also a trv element or its temperature is equal or greater than the previous heating element.
+                            $lastAddedElement = _mergeElement1WithHottestTemperature($trvElement, $heatingElementPrevious, $lastAddedElementType);
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                        } elsif (!defined($lastAddedElement) || ($trvElement->{temp} > $lastAddedElement->{temp})) {
+                            # If its temperature is greater than the last added element's temperature
+                            $lastAddedElement = $trvElement;
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                            $lastAddedElementType = $ELEMENT_TYPE{TRV};
+                        }
+                        $trvElementPrevious = $trvElement;
+                        $trvElement = shift(@trvDayElements);                            
+                    } elsif (defined($heatingElement) && _is1stTimeBefore2ndTime($heatingElement, $trvElement)) {
+                        # If the next element in chronological order is the heatingElement
+                        if (defined($lastAddedElementType) && $lastAddedElementType == $ELEMENT_TYPE{HEATING}) {
+                            # If the last added element was also a heating element or its temperature is equal or greater than the previous TRV element.
+                            $lastAddedElement = _mergeElement1WithHottestTemperature($heatingElement, $trvElementPrevious, $lastAddedElementType);
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);                            
+                        } elsif (!defined($lastAddedElement) || ($heatingElement->{temp} > $lastAddedElement->{temp})) {
+                            # If its temperature is greater than the last added element's temperature
+                            $lastAddedElement = $heatingElement;
+                            _insertNewDayElement(\@retDayElements, $lastAddedElement);
+                            $lastAddedElementType = $ELEMENT_TYPE{HEATING};
+                        } 
+                        $heatingElementPrevious = $heatingElement;
+                        $heatingElement = shift(@heatingDayElements);
+                    } else {
+                        # No more elements in either array. Time to finish!
+                        $finished = 1;
+                    }
+                }
+
+                my $maxNumbHeatingElements = (defined($hiveHomeClient)) ? $hiveHomeClient->_getMaxNumbHeatingElements() : 6;
+
+                # Check if the new day schedule has the allowed number of elements!
+                if ($maxNumbHeatingElements >= $#retDayElements) {
+                    # The number of day elements are within the allowed range!
+                    $retDaySchedule =  join(" / ", map($_->{element},  @retDayElements));
+                } else {
+                    # There are too many elements in the day. 
+                    Log(2, "_mergeDayHeatingShedule(${day}) - Too many elements - ${maxNumbHeatingElements} - original schedule - ".join(" / ", map($_->{element}, @retDayElements)));
+                    $retDaySchedule = _reduceNumberOfElements($maxNumbHeatingElements, \@retDayElements);
+                    Log(2, "_mergeDayHeatingShedule(${day}) - Modified schedule - ${retDaySchedule}");
+                }
+            } else {
+                # The current heating schedule is good
+                $retDaySchedule = $heatingDayShedule;
+            }
+        } else {
+            # No current heating schedule is defined yet for the day
+            # Initialise it...
+            $retDaySchedule = $trvDayShedule;
+        }
+    } else {
+        # No TRV schedule defined, return the current heating schedule for the day.
+        $retDaySchedule = $heatingDayShedule;
+    }
+    Log(4, "_mergeDayHeatingShedule(${day}) - output:  ${retDaySchedule}");
+
+    return $retDaySchedule;
+}
+
+sub HiveHome_GetWeekDay($)
+{
+	my ($str) = @_;
+
+	my $weekDay=undef;
+	my $timenum;
+
+	if (defined($str)) {
+		my @a = split("[T: -]", $str);
+		$timenum=mktime($a[5],$a[4],$a[3],$a[2],$a[1]-1,$a[0]-1900,0,0,-1);	
+	} else {
+		$timenum=time;
+	}
+
+	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($timenum);
+	my @weekdays = qw(monday tuesday wednesday thursday friday saturday sunday);
+	$weekDay = $weekdays[$wday - 1];
+  
+ 	Log(4, "Weekday: ${weekDay}"); 
+  
+	return $weekDay;
+}
+
+sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
+{
+	my ($hashHiveHome) = @_;
+
+	Log(5, "HiveHome_SetZoneScheduleByZoneTRVSchedules: enter");
+
+    my $hiveHomeClient = _getHiveHomeInterface($hashHiveHome);
+    # TODO: exit if undefined.
+
+	# Get todays shortname
+    my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
+	my $day = HiveHome_GetWeekDay(undef);
+
+    # For each heating products
+    my @heatingProducts = _getHeatingProducts('heating', undef);
+    foreach my $heatingProduct (@heatingProducts) {
+        # Get the heating products zone.
+		my $heatingZone = lc(InternalVal($heatingProduct, "zone", undef));
+        if (defined($heatingZone)) {
+            Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Checking zone TRV has been updated: ${heatingProduct}");
+
+            # Test to see if a TRV within that heating zone has been modified 
+            if (defined($hashHiveHome->{helper}{$heatingZone})) {
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone TRV has been updated: ${heatingProduct}");
+
+                delete($hashHiveHome->{helper}{$heatingZone});
+
+                my $id = InternalVal($heatingProduct, 'id', undef);
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: No 'id' found for ${heatingProduct}") if (!defined($id));
+                my $hash = $modules{HiveHome_Product}{defptr}{$id};
+                Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: No 'hash' found for ${heatingProduct} with id ${id}") if (!defined($id));
+
+                # Test to see if the heating product that controls that zone is configured to have its schedule set by its TRVs
+                if (0 != AttrVal($heatingProduct, 'setScheduleFromTRVs', 0)) {
+                    Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Zone is configured to be set by zone TRVs: ${heatingProduct}");
+
+                    my %schedules;
+
+                    # Get all unique TRV heating schedules in the heating zone for the current day.
+                    my @zoneTRVs = _getHeatingProducts('trvcontrol', $heatingZone);
+                    foreach my $zoneTRV (@zoneTRVs) {
+                        Log(4, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${zoneTRV}");
+                        if (0 != AttrVal($zoneTRV, 'setScheduleFromTRVs', 0)) {
+                            my $val = InternalVal($zoneTRV, "WeekProfile_${day}", undef);
+                            if (defined($val)) {
+                                $val =~ s/°C//ig;
+                                $schedules{$val} = 1;
+                            }
+                        }
+                    }
+
+                    # Combine the unique schedules into a single schedule
+                    my $heatingSchedule;
+                    foreach my $schedule (keys %schedules) {
+                        Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: TRV is part of zone: ${schedule}");
+                        $heatingSchedule = _mergeDayHeatingShedule($hiveHomeClient, $day, $heatingSchedule, $schedule);
+                    }
+
+                    if (defined($heatingSchedule)) {
+                        # Compare generated schedule with current schedule...
+                        my $weekProfileCmdString = undef;
+                        my $different = undef;
+                        foreach my $loopDay (@daysofweek) {
+                            my $heatingProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_${loopDay}"});
+                            $heatingProfile =~ s/[.]0//ig;
+
+                            if ($loopDay eq $day && defined($heatingSchedule)) {
+                                my $trvProfile = HiveHome_ConvertUIDayProfileStringToCmdString($heatingSchedule);
+
+                                if (lc($heatingProfile) eq lc($trvProfile)) {
+                                    Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${trvProfile}) matches current - ${heatingProfile}");
+                                } else {
+                                    my $temp = $hash->{"WeekProfile_${loopDay}"};
+                                    $temp =~ s/°C//ig;
+                                    Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${heatingSchedule}) different to current - ${temp}");
+                                    Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: generated profile (${trvProfile}) different to current - ${heatingProfile}");
+                                    $heatingProfile = $trvProfile;
+                                    $different = 1;
+                                }
+                            }
+                            $weekProfileCmdString .= $loopDay.' '.$heatingProfile.' ';
+                        }
+
+                        # TODO: If schedules do not match, then apply new schedule to heating.
+                        if (defined($different)) {
+                            Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: Complete WeekProfile - ".$weekProfileCmdString);
+                            my $resp = $hiveHomeClient->_setSchedule(lc($hash->{productType}), $hash->{id}, $weekProfileCmdString);
+                        } else {
+                            Log(1, "HiveHome_SetZoneScheduleByZoneTRVSchedules: WeekProfile not changed from current - ".$weekProfileCmdString);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+	Log(5, "HiveHome_SetZoneScheduleByZoneTRVSchedules: exit");
 }
 
 sub HiveHome_Write_Action($$$$@)
@@ -400,8 +835,6 @@ sub HiveHome_Write_Device($$$$@)
 
     return $ret;
 }
-
-
 
 sub HiveHome_IsValidTemperature($)
 {
@@ -510,39 +943,43 @@ sub HiveHome_ConvertUIDayProfileStringToCmdString($)
 {
     my $dayString = shift;
 
-    Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Enter - dayString - ".$dayString);
-
     my $retCmdString = undef;
 
-    # Remove the degrees characters from the temp...
-    $dayString =~ s/°C//ig;
+    if (defined($dayString)) {
+        Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Enter - dayString - ".$dayString);
 
-    # Parse the UI string from format: 
-    #       00:00-OFF / 06:30-ON / 07:15-OFF / 16:00-ON / 21:30-OFF
-    # into 
-    #       off,06:30,on,07:15,off,16:00,on,21:30,off
 
-    my @dayElements = split(/ \/ /, $dayString);
-    my $firstElement = 1;
+        # Remove the degrees characters from the temp...
+        $dayString =~ s/°C//ig;
 
-    foreach my $element (@dayElements)
-    {
-        # Seperate the time and the temp...
-        my ($time, $temp) = split(/-/, $element);
+        # Parse the UI string from format: 
+        #       00:00-OFF / 06:30-ON / 07:15-OFF / 16:00-ON / 21:30-OFF
+        # into 
+        #       off,06:30,on,07:15,off,16:00,on,21:30,off
 
-        if (defined($firstElement))
+        my @dayElements = split(/ \/ /, $dayString);
+        my $firstElement = 1;
+
+        foreach my $element (@dayElements)
         {
-            $retCmdString = $temp;
-            $firstElement = undef;
+            # Seperate the time and the temp...
+            my ($time, $temp) = split(/-/, $element);
+
+            if (defined($firstElement))
+            {
+                $retCmdString = $temp;
+                $firstElement = undef;
+            }
+            else
+            {
+                $retCmdString .= ','.$time.','.$temp;
+            }
         }
-        else
-        {
-            $retCmdString .= ','.$time.','.$temp;
-        }
+
+        Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Exit - retString - ".$retCmdString);
+    } else {
+        Log(2, "HiveHome_ConvertUIDayProfileStringToCmdString: Error - invalid 'undef' parameter");
     }
-
-    Log(5, "HiveHome_ConvertUIDayProfileStringToCmdString: Exit - retString - ".$retCmdString);
-
     return $retCmdString;
 }
 
@@ -634,12 +1071,12 @@ sub HiveHome_Write_Product($$$$@)
 	# For product types of: heating, hotwater, trvcontrol
 	$cmd = (lc($cmd) eq 'auto') ? 'schedule' : lc($cmd);
 	
-    if (!defined($shash->{productType}))
-    {
+    if (!defined($shash->{STATE}) || lc($shash->{STATE}) eq 'disconnected') {
+        # Test to see if the product is offline
+        Log(1, "HiveHome_Write_Product - Product is disconnected/offline ".$shash->{NAME});
+    } elsif (!defined($shash->{productType})) {
         Log(1, "HiveHome_Write_Product - productType not defined for ".$shash->{NAME});
-    }
-    else
-    {
+    } else {
         Log(4, "HiveHome_Write_Product(${cmd}): product type: ".$shash->{productType});
 
         if ($cmd eq 'weekprofile')
