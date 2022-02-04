@@ -5,9 +5,10 @@ use warnings;
 use HiveHomeInterface;
 use JSON;
 use POSIX;
-use Time::Local;
+#use Time::Local;
 use Data::Dumper;
 use List::Util qw(first);
+use HiveHomeCommon;
 
 # DEFINE myHiveHome HiveHome <username> <password>
 my $hiveHomeClient = undef;
@@ -231,27 +232,22 @@ sub HiveHome_UpdateNodes()
             my $numbZoneTRVsCallingForHeat;
             my $numbTRVsCallingForHeat;
 
-            foreach my $product (@products)
-            {
-                if ($product->{type} eq 'trvcontrol')
-                {
+            foreach my $product (@products) {
+                if ($product->{type} eq 'trvcontrol') {
                     # Find the matching device for this product
                     my ($trvDevice) = first { 'trv' eq lc($_->{type}) && lc($_->{productId}) eq lc($product->{id}) } @devices;
 
-                    if (defined($trvDevice))
-                    {
+                    if (defined($trvDevice)) {
                         # We have found a matching TRV
                         my $trv = $product;
 
                         $trv->{deviceType} = $trvDevice->{type};
 
-                        while ( my ($key, $value) = each(%{$trvDevice->{internals}}) ) 
-                        {
+                        while ( my ($key, $value) = each(%{$trvDevice->{internals}})) {
                             $trv->{internals}->{$key} = $value;
                         }
 
-                        while ( my ($key, $value) = each(%{$trvDevice->{readings}}) ) 
-                        {
+                        while ( my ($key, $value) = each(%{$trvDevice->{readings}})) {
                             $trv->{readings}->{$key} = $value;
                         }
 
@@ -262,18 +258,17 @@ sub HiveHome_UpdateNodes()
                 		$numbTRVsCallingForHeat->{$trv->{internals}->{zone}} = 0 if (!defined($numbTRVsCallingForHeat->{$trv->{internals}->{zone}}));
                 		$numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} = 0 if (!defined($numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}}));
 
+                        my $hashTRV = $modules{HiveHome_Product}{defptr}{$product->{id}};
+
                         # Test to see if the TRV is not at the required temperature.
-                        if ($trv->{readings}->{temperature} < $trv->{readings}->{target})
-                        {                           
+                        if ($trv->{readings}->{temperature} <  hhc_AddOffestTemperature($trv->{readings}->{target}, $hashTRV->{NAME})) {                           
                             $numbTRVsCallingForHeat->{$trv->{internals}->{zone}} = (!defined($numbTRVsCallingForHeat->{$trv->{internals}->{zone}})) ? 1 : $numbTRVsCallingForHeat->{$trv->{internals}->{zone}} + 1;
 
-                            my $hashTRV = $modules{HiveHome_Product}{defptr}{$product->{id}};
                             my $controlHeating = AttrVal($hashTRV->{NAME}, 'controlZoneHeating', 0);
 
                             # If the TRV is configured to control the heating and it's 'calibrated'
                             # Do not let the TRV call for heat if it is calibrating.
-                            if (0 != $controlHeating && uc($hashTRV->{calibrationStatus}) ne 'CALIBRATING')
-                            {
+                            if (0 != $controlHeating && uc($hashTRV->{calibrationStatus}) ne 'CALIBRATING') {
                                 Log(3, "HiveHome_UpdateNodes: TRV ".$trv->{name}." temperature is below its target temperature");
                                 # Flag this zone as requiring heating and count the number of TRVs that are calling for heat.
                                 $numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} = (!defined($numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}})) ? 1 : $numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} + 1;
@@ -284,8 +279,7 @@ sub HiveHome_UpdateNodes()
             }
 
             # Loop through zones
-            foreach my $zone (keys %$numbZoneTRVsCallingForHeat)
-            {
+            foreach my $zone (keys %$numbZoneTRVsCallingForHeat) {
                 Log(3, "HiveHome_UpdateNodes: Zone ".$zone." TRV(s) are ".(0 == $numbZoneTRVsCallingForHeat->{$zone} ? "not " : "")."calling for heat");
 
                 Log(3, "HiveHome_UpdateNodes: Zone ".$zone." ".$numbTRVsCallingForHeat->{$zone}." TRV(s) are not at target and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat");
@@ -297,48 +291,38 @@ sub HiveHome_UpdateNodes()
                 # Find the matching device for this product
                 my ($heatingProduct) = first { 'heating' eq lc($_->{type}) && lc($_->{internals}->{zone}) eq lc($zone) } @products;
 
-                if (defined($heatingProduct))
-                {
+                if (defined($heatingProduct)) {
                     my $hashHeating = $modules{HiveHome_Product}{defptr}{$heatingProduct->{id}};
                     my $controlHeating = AttrVal($hashHeating->{NAME}, 'controlZoneHeating', 0);
-                    if (0 != $controlHeating)
-                    {
+                    if (0 != $controlHeating) {
                         Log(3, "HiveHome_UpdateNodes: Heating zone is ".(0 == $heatingProduct->{readings}->{working} ? "not " : "")."calling for heat. Current temp is ".$heatingProduct->{readings}->{temperature}." target temp is ".$heatingProduct->{readings}->{target});
 
                         my $numbTRVsRequired = AttrVal($hashHeating->{NAME}, 'controlZoneHeatingMinNumberOfTRVs', 3);
 
                         # If heating is not required from the zone TRVs but the heating is on...
-                        if (0 == $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working})
-                        {
+                        if (0 == $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working}) {
                             # The TRVs do not require heat but the heating is on.
                             Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' TRV(s) not calling for heat but zone heating is on");
 
-                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule' && $heatingProduct->{internals}->{scheduleOverride} == 1)
-                            {
+                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule' && $heatingProduct->{internals}->{scheduleOverride} == 1) {
                                 Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to schedule");
                                 my $ret = $hiveHomeClient->_setHeatingMode($heatingProduct->{type}, $heatingProduct->{id}, 'schedule');
-                            }
-                            elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost')
-                            {
+                            } elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost') {
                                 # TODO: Currently, if heating is set to BOOST, all TRVs are set to the same BOOST as the heating zone.
                                 #       This is not the desired result as this will cause a feedback loop which will eventually adjust the entire heating to 5 degrees for the entire zone!
                                 Log(3, "HiveHome_UpdateNodes: Adjusting boost for zone '".$zone."' with a temperature of ".floor($heatingProduct->{readings}->{temperature}));
 #                               my $ret = $hiveHomeClient->setHeatingBoostMode($heatingProduct->{id}, floor($heatingProduct->{readings}->{temperature}, $heatingProduct->{internals}->{boost}));
-                            }
-                            elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual')
-                            {
+                            } elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual') {
                                 Log(3, "HiveHome_UpdateNodes: Adjusting manual for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
                                 my $ret = $hiveHomeClient->setHeatingMode($heatingProduct->{id}, 'MANUAL', floor($heatingProduct->{readings}->{temperature} + 1));
                             }
                         }
                         # If TRVs are not at the required heat
-                        elsif ($numbTRVsRequired <= $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working})
-                        {
+                        elsif ($numbTRVsRequired <= $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working}) {
                             # The TRVs require heat but the zone heating os off.
                             Log(3, "HiveHome_UpdateNodes: Heating zone '".$zone."' is not on and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat, zone requires ${numbTRVsRequired} TRV(s) to switch on heating");
 
-                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule')
-                            {
+                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule') {
                                 Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to scheduleOverride with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
                                 my $ret = $hiveHomeClient->_scheduleOverride($heatingProduct->{type}, $heatingProduct->{id}, ceil($heatingProduct->{readings}->{temperature} + 1));
                             }
@@ -419,34 +403,6 @@ sub _insertNewDayElement($$)
     }
 }
 
-sub _extractHeatingElements($)
-{
-	my ($heatingDayShedule) = @_;
-    # Remove the degrees characters from the temperatures...
-    $heatingDayShedule =~ s/°C//ig;
-    # Seperate each time-temp pair.
-    my @heatingDayElements = split(/ \/ /, $heatingDayShedule);
-    my @retDayElements;
-
-    foreach my $heatingElement (@heatingDayElements) 
-    { 
-        my $hashHeatingElement = {};        
-        # Seperate the time and the temp...
-        $hashHeatingElement->{element} = $heatingElement;
-        my ($heatingTime, $heatingTemp) = split(/-/, $heatingElement);
-        # Put them into a hash and push that into a new array.
-        $hashHeatingElement->{temp} = $heatingTemp;
-        $hashHeatingElement->{time} = $heatingTime;
-        # Seperate the time into hour and mins...
-        my ($heatingHour, $heatingMin) = split(/:/, $heatingTime);
-        $hashHeatingElement->{hour} = $heatingHour;
-        $hashHeatingElement->{min} = $heatingMin;
-        # Push the new hash into our return array.
-        push(@retDayElements, $hashHeatingElement);
-    }
-    return @retDayElements;
-}
-
 sub _is1stTimeBefore2ndTime($$) 
 {
 	my ($time1, $time2) = @_;
@@ -481,8 +437,7 @@ sub _mergeElement1WithHottestTemperature($$$)
     my $retElement = _copyDayElement($elementHeating);
 
     if (defined($elementTRV) && $elementTRV->{temp} > $elementHeating->{temp}) {
-        $retElement->{temp} = $elementTRV->{temp};
-        $retElement->{element} = $retElement->{time}."-".$retElement->{temp};
+        hhc_modifyTemperature($retElement, $elementTRV->{temp}, undef);
         if (defined($elementType)) {
             $_[2] = ($elementType ==  $ELEMENT_TYPE{TRV}) ? $ELEMENT_TYPE{HEATING} : $ELEMENT_TYPE{TRV};
         }
@@ -552,8 +507,8 @@ sub _mergeDayHeatingShedule($$$$)
                 # could also have temp with decimals.
 
                 # Convert the heating day schedule to an array of hashes(temp and time).
-                my @heatingDayElements = _extractHeatingElements($heatingDayShedule);
-                my @trvDayElements = _extractHeatingElements($trvDayShedule);
+                my @heatingDayElements = hhc_extractHeatingElements($heatingDayShedule);
+                my @trvDayElements = hhc_extractHeatingElements($trvDayShedule);
 
 #                Log(1, "Heating ".Dumper(@heatingDayElements));
 #                Log(1, "TRV     ".Dumper(@trvDayElements));
@@ -659,29 +614,6 @@ sub _mergeDayHeatingShedule($$$$)
     return $retDaySchedule;
 }
 
-sub HiveHome_GetWeekDay($)
-{
-	my ($str) = @_;
-
-	my $weekDay=undef;
-	my $timenum;
-
-	if (defined($str)) {
-		my @a = split("[T: -]", $str);
-		$timenum=mktime($a[5],$a[4],$a[3],$a[2],$a[1]-1,$a[0]-1900,0,0,-1);	
-	} else {
-		$timenum=time;
-	}
-
-	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($timenum);
-	my @weekdays = qw(monday tuesday wednesday thursday friday saturday sunday);
-	$weekDay = $weekdays[$wday - 1];
-  
- 	Log(4, "Weekday: ${weekDay}"); 
-  
-	return $weekDay;
-}
-
 sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
 {
 	my ($hashHiveHome) = @_;
@@ -693,7 +625,7 @@ sub HiveHome_SetZoneScheduleByZoneTRVSchedules($)
 
 	# Get todays shortname
     my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
-	my $day = HiveHome_GetWeekDay(undef);
+	my $day = hhc_GetWeekDay(undef);
 
     # For each heating products
     my @heatingProducts = _getHeatingProducts('heating', undef);
@@ -837,46 +769,6 @@ sub HiveHome_Write_Device($$$$@)
     return $ret;
 }
 
-sub HiveHome_IsValidTemperature($)
-{
-    # TODO: There is a PERL warning thrown from this function.
-    #       Use of uninitialized value $val in pattern match
-    my ($val) = @_;
-    return $val =~ /^[1-9][0-9](\.[05])?$/;
-}
-
-sub HiveHome_IsValidNumber
-{
-    my ($val) = @_;
-    return $val =~ /^[1-9][0-9]*$/;
-}
-
-sub HiveHome_IsValidTime 
-{ 
-    my $s = shift; 
-    if ($s =~ s/^([0-9]|0[0-9]|1[0-9]|2[0-3]):([0-5][0-9])$/sprintf('%02d:%02d',$1,$2)/e) 
-    { 
-        return $s; 
-    } 
-    else 
-    { 
-        return undef; 
-    } 
-} 
-
-sub HiveHome_IsValidHotWaterTemp 
-{ 
-    my $s = shift; 
-    if ($s =~ s/^(ON|OFF|HEAT)$/\U$1/i) 
-    { 
-        return $s; 
-    } 
-    else 
-    { 
-        return undef; 
-    } 
-}
-
 sub HiveHome_ParseWeekCmdString($$)
 {
     my $weekString = shift;
@@ -885,7 +777,7 @@ sub HiveHome_ParseWeekCmdString($$)
     Log(5, "HiveHome_ParseWeekCmdString: Enter - WeekProfile - ".$weekString);
 
     # Split the week string into its component (day) parts 
-    my @array = split(/(monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)/i, HiveHomeInterface::_trim($weekString));
+    my @array = split(/(monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)/i, hhc_trim($weekString));
     my %dayHash = (mon => "monday", tue => "tuesday", wed => "wednesday", thu => "thursday", fri => "friday", sat => "saturday", sun => "sunday");
 
     # Remove the first element, which is blank
@@ -913,20 +805,20 @@ sub HiveHome_ParseWeekCmdString($$)
                 # Seperate the time and values from the cmd string.
                 my (@value, @time);
                 my $i;
-                push @{ $i++ % 2 ? \@time : \@value }, $_ for split(/,/, HiveHomeInterface::_trim($array[$day+1]));
+                push @{ $i++ % 2 ? \@time : \@value }, $_ for split(/,/, hhc_trim($array[$day+1]));
 
                 # Put them back together again, but with the temperature values offset.
                 $array[$day+1] = "";
                 for my $i ( 0 .. ($#value - 1))
                 {
-                    $array[$day+1] .= HiveHome_AddOffestTemperature($value[$i], $tempOffset).",".$time[$i].",";
+                    $array[$day+1] .= hhc_AddOffestTemperature($value[$i], $tempOffset).",".$time[$i].",";
                 }
-                $array[$day+1] .= HiveHome_AddOffestTemperature($value[$#value], $tempOffset);
+                $array[$day+1] .= hhc_AddOffestTemperature($value[$#value], $tempOffset);
 
                 Log(3, "HiveHome_ParseWeekCmdString: Offset days temperature offset values - ".$array[$day+1]);
             }
 
-            $weekHash->{$dayHash{lc($array[$day])}} = HiveHomeInterface::_trim($array[$day+1]);
+            $weekHash->{$dayHash{lc($array[$day])}} = hhc_trim($array[$day+1]);
         }
     }
 
@@ -982,80 +874,6 @@ sub HiveHome_ConvertUIDayProfileStringToCmdString($)
         Log(2, "HiveHome_ConvertUIDayProfileStringToCmdString: Error - invalid 'undef' parameter");
     }
     return $retCmdString;
-}
-
-sub HiveHome_AddOffestTemperature($$)
-{
-    my $temp = shift;
-    my $tempOffset = shift;
-
-    Log(5, "HiveHome_AddOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
-
-    if (defined($tempOffset) && HiveHome_IsValidTemperature($temp))
-    {
-        $temp = HiveHome_MakeValidTemperature($temp + $tempOffset);
-    }
-
-    Log(5, "HiveHome_AddOffestTemperature: Exit - return - ${temp}");
-
-    return $temp;
-}
-
-sub HiveHome_SubOffestTemperature($$)
-{
-    my $temp = shift;
-    my $tempOffset = shift;
-
-    Log(5, "HiveHome_SubOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
-
-    if (defined($tempOffset) && HiveHome_IsValidTemperature($temp))
-    {
-        $temp = HiveHome_MakeValidTemperature($temp - $tempOffset);
-    }
-
-    Log(5, "HiveHome_SubOffestTemperature: Exit - return - ${temp}");
-
-    return $temp;
-}
-
-sub HiveHome_MakeValidTemperature($)
-{
-    my $temp = shift;
-
-    Log(5, "HiveHome_MakeValidTemperature: Enter - Temp - ${temp}");
-
-    if ($temp > HiveHome_MaxTemperature())
-    {
-        $temp = HiveHome_MaxTemperature();
-    }
-    elsif ($temp < HiveHome_MinTemperature())
-    {
-        $temp = HiveHome_MinTemperature();
-    }
-    Log(5, "HiveHome_MakeValidTemperature: Exit - Temp - ${temp}");
-    return $temp;
-}
-
-sub HiveHome_MinTemperature()
-{
-    return 5;
-}
-
-sub HiveHome_MaxTemperature()
-{
-    return 32;
-}
-
-sub HiveHome_SerializeTemperature 
-{
-    # Print number in format "0.0", pass "on" and "off" verbatim, convert 30.5 and 4.5 to "on" and "off"
-    # Used for "desiredTemperature", "ecoTemperature" etc. but not "temperature"
-
-    my $t = shift;
-#    return $t    if ( ($t eq 'on') || ($t eq 'off') );
-#    return 'off' if ( $t ==  4.5 );
-#    return 'on'  if ( $t == 30.5 );
-    return sprintf('%2.1f', $t);
 }
 
 sub HiveHome_Write_Product($$$$@)
@@ -1204,148 +1022,99 @@ sub HiveHome_Write_Product($$$$@)
                 $ret = "missing argument value, must be either horizontal or vertical";
             }
         }
-        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock'))
-        {
+        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock')) {
             Log(3, "HiveHome_Write_Product(${cmd}) - ${args[0]}");
 
-            if (defined($args[0]) && ($args[0] == 0 || $args[0] == 1))
-            {
+            if (defined($args[0]) && ($args[0] == 0 || $args[0] == 1)) {
                 $ret = $hiveHomeClient->setTRVChildLock($shash->{deviceId}, $args[0]);
-            }
-            else
-            {
+            } else {
                 $ret = "missing argument value, must be either 0 or 1";
             }
-        }        
-        elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol'))
-        {
-            if ($cmd eq 'desiredtemperature')
-            {
+        } elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol')) {
+            if ($cmd eq 'desiredtemperature') {
                 # If the command is 'desiredTemperature' then the first argument can be translated into the command or a temperature for manual.
-                if (HiveHome_IsValidTemperature($cmd))
-                {
+                if (hhc_IsValidTemperature($cmd)) {
                     $args[0] = $cmd;
                     $cmd = 'manual';
-                }
-                else
-                {
+                } else {
                     $cmd = $args[0];
                 }
             }
 
             # Can have arguments of:
             #	SCHEDULE, MANUAL, OFF, BOOST
-            if (($cmd eq 'schedule') or ($cmd eq 'off'))
-            {
+            if (($cmd eq 'schedule') or ($cmd eq 'off')) {
                 $ret = $hiveHomeClient->_setHeatingMode($shash->{productType}, $shash->{id}, $cmd);
-            }
-            elsif ($cmd eq 'boost') 
-            {
+            } elsif ($cmd eq 'boost')  {
                 # BOOST can be provided with or without parameters
                 #       If no parameters then it will use the internals boostTemperature and boostDuration
-                if (!defined($args[0]) || $args[0] eq '')
-                {
+                if (!defined($args[0]) || $args[0] eq '') {
                     # No parameters provided, use the internals.
                     my $temp = AttrVal($shash->{NAME}, 'boostTemperature', 20);
                     $ret = $hiveHomeClient->_setHeatingBoostMode($shash->{productType}, $shash->{id}, $temp, AttrVal($shash->{NAME}, 'boostDuration', 30));
-                }
-                elsif (!HiveHome_IsValidTemperature($args[0]))
-                {
+                } elsif (!hhc_IsValidTemperature($args[0])) {
                     $ret = "invalid value '${args[0]}', must be a temperature value";
-                }
-                elsif (!HiveHome_IsValidNumber($args[1]))
-                {
+                } elsif (!hhc_IsValidNumber($args[1])) {
                     $ret = "invalid value '${args[1]}', must be a time in mins";
-                }
-                else
-                {
+                } else {
                     my $temp = $args[0];
                     $ret = $hiveHomeClient->_setHeatingBoostMode($shash->{productType}, $shash->{id}, $temp, $args[1]);
                 }
-            }
-    #        elsif (($cmd eq 'manual') or ($cmd eq 'frostprotection'))
-            elsif (($cmd eq 'manual') or ($cmd eq 'scheduleoverride'))
-            {
+            } elsif (($cmd eq 'manual') or ($cmd eq 'scheduleoverride')) {
                 # MANUAL and SCHEDULEOVERRIDE next arg is temperature.
                 # 		Can we get devices minimum and maximum temperature from device details
                 #		and only allow whole or half decimal places			
 
-                if (HiveHome_IsValidTemperature($args[0]))
-                {
-                    if ($cmd eq 'manual')
-                    {
+                if (hhc_IsValidTemperature($args[0])) {
+                    if ($cmd eq 'manual') {
                         $ret = $hiveHomeClient->_setHeatingMode($shash->{productType}, $shash->{id}, $cmd, $args[0]);
-                    }
-                    elsif ($cmd eq 'scheduleoverride')
-                    {
-                        $args[0] = HiveHome_AddOffestTemperature($args[0], AttrVal($shash->{NAME}, 'temperatureOffset', 0));
+                    } elsif ($cmd eq 'scheduleoverride') {
+                        $args[0] = hhc_AddOffestTemperature($args[0], $shash->{NAME});
 
                         # Ensure the device is in schedule mode otherwise schedule override will have no affect 
                         $ret = $hiveHomeClient->_setHeatingMode($shash->{productType}, $shash->{id}, 'schedule');
                         $ret = $hiveHomeClient->_scheduleOverride($shash->{productType}, $shash->{id}, $args[0]);
-                    }
-                    elsif ($cmd eq 'frostprotection')
-                    {
+                    } elsif ($cmd eq 'frostprotection') {
                         $ret = $hiveHomeClient->setFrostProtection($shash->{productType}, $shash->{id}, $args[0]);
                     }
-                }
-                else
-                {
+                } else {
                     $ret = "invalid value '${args[0]}', must be a temperature value";
                 }
-            }
-            elsif ($cmd eq 'advanceschedule')
-            {
+            } elsif ($cmd eq 'advanceschedule') {
                 # Ensure the device is in schedule mode otherwise schedule override will have no affect 
                 $ret = $hiveHomeClient->_setHeatingMode($shash->{productType}, $shash->{id}, 'schedule');
 
                 $ret = $hiveHomeClient->_advanceSchedule($shash->{productType}, $shash->{id});
-            }
-            elsif (lc($shash->{productType}) eq 'heating')
-            {
-                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+            } elsif (lc($shash->{productType}) eq 'heating') {
+                my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile holidaymode cancelholidaymode:noArg advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} ";
     #            $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:knob,min:5,max:32,step:0.5,linecap:round,fgColor:red boost weekprofile frostprotection:knob,min:5,max:32,step:0.5,linecap:round,fgColor:red holidaymode";
-            }
-            else
-            {
-                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+            } else {
+                my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childLock:0,1 ";
             }
-        }
-        elsif (lc($shash->{productType}) eq 'hotwater')
-        {
+        } elsif (lc($shash->{productType}) eq 'hotwater') {
             # Can have arguments of:
             #	SCHEDULE, ON, OFF, BOOST
 
-            if (($cmd eq 'schedule') or ($cmd eq 'off') or ($cmd eq 'on'))
-            {
+            if (($cmd eq 'schedule') or ($cmd eq 'off') or ($cmd eq 'on')) {
                 # No additional args are required.
                 $ret = $hiveHomeClient->setHotWaterMode($shash->{id}, $cmd);
-            }
-            elsif ($cmd eq 'boost')
-            {
+            } elsif ($cmd eq 'boost') {
                 # Verify duration is a number...
-                if (HiveHome_IsValidNumber($args[0]))
-                {
+                if (hhc_IsValidNumber($args[0])) {
                     $ret = $hiveHomeClient->setHotWaterBoostMode($shash->{id}, $args[0]);
-                }
-                else
-                {
+                } else {
                     $ret = "invalid value '${args[0]}', must be a time in mins";
                 }
-            }
-            else
-            {
+            } else {
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg on:noArg boost:slider,15,15,420 weekprofile";
             }
-        }
-        else
-        {
+        } else {
             Log(2, "HiveHome_Write_Product(${cmd}): Unkown product type: ".$shash->{productType});
             $ret = "unknown productType ".$shash->{productType}; 
         }
@@ -1365,8 +1134,7 @@ sub _verifyWriteActionCommandArgs($$$$)
 
     my $ret = undef;
 
-    if (lc($cmd) ne lc('activate'))
-	{
+    if (lc($cmd) ne lc('activate')) {
 		$ret = "unknown argument ${cmd} choose one of activate:noArg";
 	}
 
@@ -1438,115 +1206,78 @@ sub _verifyWriteProductCommandArgs($$$$)
                 {
                     $ret = "invalid value '${args[0]}', must be either start or stop";
                 }
-            }
-            else
-            {
+            } else {
                 $ret = "missing argument value, must be either start or stop";
             }
-        }
-        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'valveposition'))
-        {
-            if (!$args[0])
-            {
+        } elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'valveposition')) {
+            if (!$args[0]) {
                 $ret = "missing argument value, must be either horizontal or vertical";
             }
-        }
-        elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock'))
-        {
-            if (!defined($args[0]) || ($args[0] != 0 && $args[0] != 1))
-            {
+        } elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'childlock')) {
+            if (!defined($args[0]) || ($args[0] != 0 && $args[0] != 1)) {
                 $ret = "missing argument value, must be either 0 or 1";
             }
-        }
-        elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol'))
-        {
-            if ($cmd eq 'desiredtemperature')
-            {
+        } elsif ((lc($shash->{productType}) eq 'heating') or (lc($shash->{productType}) eq 'trvcontrol')) {
+            if ($cmd eq 'desiredtemperature') {
                 # If the command is 'desiredTemperature' then the first argument can be translated into the command or a temperature for manual.
-                if (HiveHome_IsValidTemperature($cmd))
-                {
+                if (hhc_IsValidTemperature($cmd)) {
                     $args[0] = $cmd;
                     $cmd = 'manual';
-                }
-                else
-                {
+                } else {
                     $cmd = $args[0];
                 }
             }
 
             # Can have arguments of:
             #	SCHEDULE, MANUAL, OFF, BOOST
-            if (($cmd eq 'schedule') or ($cmd eq 'off'))
-            {
+            if (($cmd eq 'schedule') or ($cmd eq 'off')) {
                 # No args for these commands.
-            }
-            elsif ($cmd eq 'boost') 
-            {
+            } elsif ($cmd eq 'boost') {
                 # BOOST can be provided with or without parameters
                 #       If no parameters then it will use the internals boostTemperature and boostDuration
                 
-                if (!defined($args[0]) || $args[0] eq '')
-                { }
-                elsif (!HiveHome_IsValidTemperature($args[0]))
-                {
+                if (!defined($args[0]) || $args[0] eq '') { 
+                } elsif (!hhc_IsValidTemperature($args[0])) {
                     $ret = "invalid value '${args[0]}', must be a temperature value";
-                }
-                elsif (!HiveHome_IsValidNumber($args[1]))
-                {
+                } elsif (!hhc_IsValidNumber($args[1])) {
                     $ret = "invalid value '${args[1]}', must be a time in mins";
                 }
-            }
-            elsif (($cmd eq 'manual') or ($cmd eq 'scheduleoverride'))
-            {
+            } elsif (($cmd eq 'manual') or ($cmd eq 'scheduleoverride')) {
                 # MANUAL and SCHEDULEOVERRIDE next arg is temperature.
                 # 		Can we get devices minimum and maximum temperature from device details
                 #		and only allow whole or half decimal places			
 
-                if (!HiveHome_IsValidTemperature($args[0]))
-                {
+                if (!hhc_IsValidTemperature($args[0])) {
                     $ret = "invalid value '${args[0]}', must be a temperature value";
                 }
-            }
-            elsif ($cmd eq 'advanceschedule')
-            { }
-            elsif (lc($shash->{productType}) eq 'heating')
-            {
-                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+            } elsif ($cmd eq 'advanceschedule') { 
+
+            } elsif (lc($shash->{productType}) eq 'heating') {
+                my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile holidaymode cancelholidaymode:noArg advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} ";
-            }
-            else
-            {
-                my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
+            } else {
+                my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childlock:0,1 ";
             }
         }
-        elsif (lc($shash->{productType}) eq 'hotwater')
-        {
+        elsif (lc($shash->{productType}) eq 'hotwater') {
             # Can have arguments of:
             #	SCHEDULE, ON, OFF, BOOST
 
-            if (($cmd eq 'schedule') or ($cmd eq 'off') or ($cmd eq 'on'))
-            {
-            }
-            elsif ($cmd eq 'boost')
-            {
+            if (($cmd eq 'schedule') or ($cmd eq 'off') or ($cmd eq 'on')) {
+            } elsif ($cmd eq 'boost') {
                 # Verify duration is a number...
-                if (!HiveHome_IsValidNumber($args[0]))
-                {
+                if (!hhc_IsValidNumber($args[0])) {
                     $ret = "invalid value '${args[0]}', must be a time in mins";
                 }
-            }
-            else
-            {
+            } else {
                 $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg on:noArg boost:slider,15,15,420 weekprofile";
             }
-        }
-        else
-        {
+        } else {
             Log(2, "HiveHome_Write_Product(${cmd}): Unkown product type: ".$shash->{productType});
             $ret = "unknown productType ".$shash->{productType}; 
         }
