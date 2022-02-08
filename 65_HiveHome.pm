@@ -932,6 +932,9 @@ sub HiveHome_Write_Product($$$$@)
                             Log(4, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
                             $different = 1;
                         }
+                    } elsif ($forceUpdateSchedule eq 'true') {
+                        Log(4, "HiveHome_Write_Product(${cmd}): Forcing schedule to be updated (".$weekProfile->{$day}.")");
+                        $different = 1;
                     }
                     Log(4, "HiveHome_Write_Product(${cmd}): Updated schedule - ".$weekProfile->{$day});
                     $weekProfileCmdString .= $day.' '.$weekProfile->{$day}.' ';
