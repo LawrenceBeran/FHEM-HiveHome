@@ -774,7 +774,7 @@ sub HiveHome_ParseWeekCmdString($$)
     my $weekString = shift;
     my $tempOffset = shift;
 
-    Log(5, "HiveHome_ParseWeekCmdString: Enter - WeekProfile - ".$weekString);
+    Log(5, "HiveHome_ParseWeekCmdString: Enter - WeekProfile (${weekString}) temperature offset ${tempOffset}");
 
     # Split the week string into its component (day) parts 
     my @array = split(/(monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)/i, hhc_trim($weekString));
@@ -786,20 +786,15 @@ sub HiveHome_ParseWeekCmdString($$)
     my $valid_string = 1;
     my $weekHash = {};
 
-    for (my $day = 0;$day <= $#array && $valid_string;$day += 2)
-    {
-        if (!exists($dayHash{lc($array[$day])}))
-        {
+    for (my $day = 0;$day <= $#array && $valid_string;$day += 2) {
+        if (!exists($dayHash{lc($array[$day])})) {
             Log(2, "HiveHome_ParseWeekCmdString: Invalid day element".$array[$day]);
             $valid_string = undef;
-        }
-        else
-        {
+        } else {
             # Substitute HEAT with ON.
             $array[$day+1] =~ s/HEAT/ON/ig;
 
-            if (defined($tempOffset) && $tempOffset != 0)
-            {
+            if (defined($tempOffset) && $tempOffset != 0) {
                 Log(3, "HiveHome_ParseWeekCmdString: Offset days temperature original values - ".$array[$day+1]);
 
                 # Seperate the time and values from the cmd string.
@@ -809,8 +804,7 @@ sub HiveHome_ParseWeekCmdString($$)
 
                 # Put them back together again, but with the temperature values offset.
                 $array[$day+1] = "";
-                for my $i ( 0 .. ($#value - 1))
-                {
+                for my $i ( 0 .. ($#value - 1)) {
                     $array[$day+1] .= hhc_AddOffestTemperature($value[$i], $tempOffset).",".$time[$i].",";
                 }
                 $array[$day+1] .= hhc_AddOffestTemperature($value[$#value], $tempOffset);
@@ -822,8 +816,7 @@ sub HiveHome_ParseWeekCmdString($$)
         }
     }
 
-    if (!defined($valid_string))
-    {
+    if (!defined($valid_string)) {
         $weekHash = undef;
     }
 
@@ -908,6 +901,9 @@ sub HiveHome_Write_Product($$$$@)
 
             # Get the components heating offset.
             my $tempOffset = AttrVal($shash->{NAME}, 'temperatureOffset', 0);
+            my $forceUpdateSchedule = lc(AttrVal($shash->{NAME}, 'forceUpdateSchedule', 'false'));
+
+            Log(4, "HiveHome_Write_Product(${cmd}): Temperature offset: ${tempOffset}, Force Update Schedule: ${forceUpdateSchedule}");
 
             my $weekProfile = HiveHome_ParseWeekCmdString($weekString, $tempOffset);
             if (!defined($weekProfile))
@@ -926,18 +922,21 @@ sub HiveHome_Write_Product($$$$@)
                     {
                         $weekProfile->{$day} = HiveHome_ConvertUIDayProfileStringToCmdString($shash->{"WeekProfile_".$day});
                     }
-                    else
+                    elsif ($forceUpdateSchedule eq 'false')
                     {
                         my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($shash->{"WeekProfile_".$day});
                         $dayProfile =~ s/[.]0//ig;
 
                         if (lc($dayProfile) eq lc($weekProfile->{$day})) {
-                            Log(1, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") matches current - ".$dayProfile);
+                            Log(4, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") matches current - ".$dayProfile);
                         }
                         else {
-                            Log(1, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
+                            Log(4, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
                             $different = 1;
                         }
+                    } elsif ($forceUpdateSchedule eq 'true') {
+                        Log(4, "HiveHome_Write_Product(${cmd}): Forcing schedule to be updated (".$weekProfile->{$day}.")");
+                        $different = 1;
                     }
                     $weekProfileCmdString .= $day.' '.$weekProfile->{$day}.' ';
                 }

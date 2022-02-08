@@ -39,6 +39,7 @@ sub HiveHome_Product_Initialize($)
 						. "controlZoneHeating:1,0 "
 						. "controlZoneHeatingMinNumberOfTRVs "
 						. "setScheduleFromTRVs:1,0 "
+						. "forceUpdateSchedule:True,False"
 						. $readingFnAttributes;
 
 	Log(5, "HiveHome_Product_Initialize: exit");
@@ -213,57 +214,62 @@ sub HiveHome_Product_Attr($$$$)
 
 	Log(4, "HiveHome_Product_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
-	if ($attrName eq 'autoAlias' && $init_done) 
-	{
-        if ($cmd eq 'set')
-		{
-			if ($attrVal eq '1')
-			{
+	if ($attrName eq 'autoAlias' && $init_done) {
+        if ($cmd eq 'set') {
+			if ($attrVal eq '1') {
 				my $alias = AttrVal($name, 'alias', undef);
-				if (!defined($alias) || ($alias ne $hash->{name}." ".$hash->{productType}))
-				{
+				if (!defined($alias) || ($alias ne $hash->{name}." ".$hash->{productType})) {
 					fhem("attr ${name} alias ".$hash->{name}." ".$hash->{productType});
 				}
-			}
-			else
-			{
+			} else {
 				fhem("deleteattr ${name} alias");
 			}
-		}
-		elsif ($cmd eq 'del')
-		{
+		} elsif ($cmd eq 'del') {
 			# If the autoAlias attribute's previous value was 1, remove the alias.
 			my $attVal = AttrVal($name, $attrName, undef);
-			if (defined($attVal) && 0 != $attVal)
-			{
+			if (defined($attVal) && 0 != $attVal) {
 				fhem("deleteattr ${name} alias");
 			}	
 		}
-	}
-	elsif ($attrName eq 'boostDuration')
-	{
+	} elsif ($attrName eq 'boostDuration') {
 		# TODO - Verify parameter
 #        if (hhc_IsValidNumber($attrVal))
-	}
-	elsif ($attrName eq 'boostTemperature')
-	{
+	} elsif ($attrName eq 'boostTemperature') {
 		# TODO - Verify parameter
 #        if (hhc_IsValidTemperature($attrVal))
-	}
-	elsif ($attrName eq 'temperateOffset')
-	{
-		# TODO: Verify parameter...
-		# TODO: Only valid for a heating type product.
-		# TODO: Update existing settings. Can wait until the next refresh for details displayed to the screen, 
-		# 		but the current temperature needs to be corrected against the offset.
-	}
-	elsif ($attrName eq 'setScheduleFromTRVs')
-	{
+	} elsif ($attrName eq 'temperateOffset') {
+		if (hhc_IsValidTemperature($attrVal)) {
+			# Test to see if the set temperateOffset has been modified
+			my $curTempOffset = AttrVal($name, 'temperateOffset', 0);
+			if ($curTempOffset != $attrVal) {
+				# Push the entire week schedule onto the device to force the schedule temperatures to be updated with the new offset.
+				my $weekProfileCmdString = undef;
+				my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
+				foreach my $day (@daysofweek) 
+				{
+					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day});
+					$dayProfile =~ s/[.]0//ig;
+					$weekProfileCmdString .= $day.' '.$dayProfile.' ';
+				}
+				# Apply the new week schedule
+				fhem("set ${name} schedule ${weekProfileCmdString}");
+				# TODO: possible problem, will the new attribute be set before this is called?
+			}
+		} else {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
+			return "Invalid value provided ${attrVal}, must be a valid temperature number!";
+		}
+	} elsif ($attrName eq 'setScheduleFromTRVs') {
 		# TODO:
+	} elsif ($attrName eq 'forceUpdateSchedule') {
+		if (!(lc($attrVal) eq 'true' || lc($attrVal) eq 'false')) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be either 'true' or 'false'!");
+			return "Invalid value provided ${attrVal},  must be either 'true' or 'false'!";
+		}
 	}
 
 	Log(5, "HiveHome_Product_Attr: exit");
-    return undef;		
+	return undef;		
 }
 
 sub HiveHome_Product_Set($$$$)
@@ -770,6 +776,9 @@ sub HiveHome_Product_Notify($$)
 		When defined, the offset applied to the set temperature, either manual or scheduled.<br>
 		Can be any full or half number, posotive or nagative.<br>
 		The temparature offset will not go outside the allowed temperature range.</li><br>
+		<a name="forceUpdateSchedule"></a>
+		<li><code>forceUpdateSchedule</code><br><br>
+		When set to 'true' any command to set the schedule will be pushed to the product even if the current schedule matches the required schedule.</li><br>
 	</ul>	
 </ul>
 
