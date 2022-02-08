@@ -92,10 +92,10 @@ sub hhc_IsValidTemperature($)
     # TODO: There is a PERL warning thrown from this function.
     #       Use of uninitialized value $val in pattern match
     my ($val) = @_;
-    return $val =~ /^[1-9][0-9](\.[05])?$/;
+    return $val =~ /^[+-]?\d+(\.[05])?$/;
 }
 
-sub hhc_IsValidNumber
+sub hhc_IsValidNumber($)
 {
     my ($val) = @_;
     return $val =~ /^[1-9][0-9]*$/;
@@ -126,17 +126,20 @@ sub hhc_AddOffestTemperature($$)
     my $temp = shift;
     my $tempOffsetOrName = shift;
 
-    my $tempOffset = $tempOffsetOrName;
-    if (!hhc_IsValidNumber($tempOffsetOrName)) {
-        $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
-    }    
-    
-    Log(5, "hhc_AddOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
+    if (defined($tempOffsetOrName)) {
+        Log(5, "hhc_AddOffestTemperature: Enter - Temp - ${temp} tempOffsetOrName - ${tempOffsetOrName}");
 
-    if (defined($tempOffset) && hhc_IsValidTemperature($temp)) {
-        $temp = hhc_MakeValidTemperature($temp + $tempOffset);
+        my $tempOffset = $tempOffsetOrName;
+        if (!hhc_IsValidTemperature($tempOffsetOrName)) {
+            $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
+        }    
+        
+        Log(5, "hhc_AddOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
+
+        if (defined($tempOffset) && hhc_IsValidTemperature($temp)) {
+            $temp = hhc_MakeValidTemperature($temp + $tempOffset);
+        }
     }
-
     Log(5, "hhc_AddOffestTemperature: Exit - return - ${temp}");
 
     return $temp;
@@ -147,17 +150,20 @@ sub hhc_SubOffestTemperature($$)
     my $temp = shift;
     my $tempOffsetOrName = shift;
 
-    my $tempOffset = $tempOffsetOrName;
-    if (!hhc_IsValidNumber($tempOffsetOrName)) {
-        $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
+    if (defined($tempOffsetOrName)) {
+        Log(5, "hhc_SubOffestTemperature: Enter - Temp - ${temp} tempOffsetOrName - ${tempOffsetOrName}");
+
+        my $tempOffset = $tempOffsetOrName;
+        if (!hhc_IsValidTemperature($tempOffsetOrName)) {
+            $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
+        }
+
+        Log(5, "hhc_SubOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
+
+        if (defined($tempOffset) && hhc_IsValidTemperature($temp)) {
+            $temp = hhc_MakeValidTemperature($temp - $tempOffset);
+        }
     }
-
-    Log(5, "hhc_SubOffestTemperature: Enter - Temp - ${temp} tempOffset - ${tempOffset}");
-
-    if (defined($tempOffset) && hhc_IsValidTemperature($temp)) {
-        $temp = hhc_MakeValidTemperature($temp - $tempOffset);
-    }
-
     Log(5, "hhc_SubOffestTemperature: Exit - return - ${temp}");
 
     return $temp;
