@@ -233,12 +233,12 @@ sub HiveHome_Product_Attr($$$$)
 		}
 	} elsif ($attrName eq 'boostDuration') {
 		# TODO - Verify parameter
-#        if (hhc_IsValidNumber($attrVal))
+#        if (hhc_IsValidDuration($attrVal))
 	} elsif ($attrName eq 'boostTemperature') {
 		# TODO - Verify parameter
 #        if (hhc_IsValidTemperature($attrVal))
 	} elsif ($attrName eq 'temperateOffset') {
-		if (hhc_IsValidTemperature($attrVal)) {
+		if (hhc_IsValidTemperatureOffset($attrVal)) {
 			# Test to see if the set temperateOffset has been modified
 			my $curTempOffset = AttrVal($name, 'temperateOffset', 0);
 			if ($curTempOffset != $attrVal) {
