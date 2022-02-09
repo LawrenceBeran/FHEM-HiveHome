@@ -92,14 +92,28 @@ sub hhc_IsValidTemperature($)
     # TODO: There is a PERL warning thrown from this function.
     #       Use of uninitialized value $val in pattern match
     my ($val) = @_;
+    return $val =~ /^\d+(\.[05])?$/;
+}
+
+sub hhc_IsValidTemperatureOffset($)
+{
+    # TODO: There is a PERL warning thrown from this function.
+    #       Use of uninitialized value $val in pattern match
+    my ($val) = @_;
     return $val =~ /^[+-]?\d+(\.[05])?$/;
 }
 
-sub hhc_IsValidNumber($)
+sub hhc_IsValidDuration($)
 {
     my ($val) = @_;
     return $val =~ /^[1-9][0-9]*$/;
 }
+
+#sub hhc_IsValidNumber($)
+#{
+#    my ($val) = @_;
+#    return $val =~ /^[1-9][0-9]*$/;
+#}
 
 sub hhc_IsValidTime 
 { 
@@ -130,7 +144,7 @@ sub hhc_AddOffestTemperature($$)
         Log(5, "hhc_AddOffestTemperature: Enter - Temp - ${temp} tempOffsetOrName - ${tempOffsetOrName}");
 
         my $tempOffset = $tempOffsetOrName;
-        if (!hhc_IsValidTemperature($tempOffsetOrName)) {
+        if (!hhc_IsValidTemperatureOffset($tempOffsetOrName)) {
             $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
         }    
         
@@ -154,7 +168,7 @@ sub hhc_SubOffestTemperature($$)
         Log(5, "hhc_SubOffestTemperature: Enter - Temp - ${temp} tempOffsetOrName - ${tempOffsetOrName}");
 
         my $tempOffset = $tempOffsetOrName;
-        if (!hhc_IsValidTemperature($tempOffsetOrName)) {
+        if (!hhc_IsValidTemperatureOffset($tempOffsetOrName)) {
             $tempOffset = AttrVal($tempOffsetOrName, 'temperatureOffset', 0);
         }
 
