@@ -164,7 +164,7 @@ sub hhc_SubOffestTemperature($$)
     my $temp = shift;
     my $tempOffsetOrName = shift;
 
-    if (defined($tempOffsetOrName)) {
+    if (defined($tempOffsetOrName) && defined($temp)) {
         Log(5, "hhc_SubOffestTemperature: Enter - Temp - ${temp} tempOffsetOrName - ${tempOffsetOrName}");
 
         my $tempOffset = $tempOffsetOrName;
@@ -177,8 +177,10 @@ sub hhc_SubOffestTemperature($$)
         if (defined($tempOffset) && hhc_IsValidTemperature($temp)) {
             $temp = hhc_MakeValidTemperature($temp - $tempOffset);
         }
+        Log(5, "hhc_SubOffestTemperature: Exit - return - ${temp}");
+    } else {
+        Log(5, "hhc_SubOffestTemperature: Exit");
     }
-    Log(5, "hhc_SubOffestTemperature: Exit - return - ${temp}");
 
     return $temp;
 }
