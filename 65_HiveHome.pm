@@ -871,7 +871,7 @@ sub HiveHome_Write_Product($$$$@)
 {
     my ($hash, $hiveHomeClient, $shash, $cmd, @args) = @_;
 
-    Log(3, "HiveHome_Write_Product: enter");
+    Log(5, "HiveHome_Write_Product: enter");
 
     my $ret = undef;
 
@@ -927,9 +927,9 @@ sub HiveHome_Write_Product($$$$@)
                         $dayProfile =~ s/[.]0//ig;
 
                         if (lc($dayProfile) eq lc($weekProfile->{$day})) {
-                            Log(3, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") matches current - ".$dayProfile);
+                            Log(4, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") matches current - ".$dayProfile);
                         } else {
-                            Log(3, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
+                            Log(4, "HiveHome_Write_Product(${cmd}): Provided profile (".$weekProfile->{$day}.") different to current- ".$dayProfile);
                             $different = 1;
                         }
                     }
@@ -941,7 +941,7 @@ sub HiveHome_Write_Product($$$$@)
                     Log(4, "HiveHome_Write_Product(${cmd}): Complete WeekProfile - ".$weekProfileCmdString);
                     my $resp = $hiveHomeClient->_setSchedule(lc($shash->{productType}), $shash->{id}, $weekProfileCmdString);
                 } else {
-                    Log(3, "HiveHome_Write_Product(${cmd}): WeekProfile not changed from current - ".$weekProfileCmdString);
+                    Log(4, "HiveHome_Write_Product(${cmd}): WeekProfile not changed from current - ".$weekProfileCmdString);
                 }
             }
         } elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'holidaymode')) {
@@ -1089,7 +1089,7 @@ sub HiveHome_Write_Product($$$$@)
 #   	readingsBulkUpdate($shash, "lastCmd", 'mode '.$node->{readings}->{mode});
 
 
-    Log(3, "HiveHome_Write_Product(${cmd}): exit");
+    Log(5, "HiveHome_Write_Product(${cmd}): exit");
     return $ret;
 }
 
