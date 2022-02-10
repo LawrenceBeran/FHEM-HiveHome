@@ -249,15 +249,16 @@ sub HiveHome_Product_Attr($$$$)
 				my %dayHash = (monday => "mon", tuesday => "tue", wednesday => "wed", thursday => "thu", friday => "fri", saturday => "sat", sunday => "sun");
 				foreach my $day (@daysofweek) 
 				{
-					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day}, 0);
+					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day}, $attrVal);
 					$dayProfile =~ s/[.]0//ig;
 					$weekProfileCmdString .= $dayHash{$day}.' '.$dayProfile.' ';
 				}
-				Log(2, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile ${weekProfileCmdString}!");
+				Log(2, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}!");
 				# Apply the new week schedule
-				fhem("set ${name} weekprofile ${weekProfileCmdString}");
+				fhem("set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}");
 				# TODO: Problem, the new attribute is not set before this is called!
 				#		The schedule will not be updated as it will not have changed.
+				#		Test to see if the 'IgnoreTemperatureOffset' argument and the modified command string works around this issue.
 			}
 		} else {
 			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
@@ -723,7 +724,10 @@ sub HiveHome_Product_Notify($$)
 		Cancels the currently configured holiday mode.
 		</li><br>	
 		<a name="weekProfile"></a>
-		<li><code>weekProfile &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;][ &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;]]</code><br><br>
+		<li><code>weekProfile [IgnoreTemperatureOffset|Force]  &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;][ &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;]]</code><br><br>
+			IgnoreTemperatureOffset and Force - Optional arguments that if required must be provided before the schedule. Either one or both can be provided with spaces between them in any order.<br>
+			IgnoreTemperatureOffset - will not apply the temperatureOffset (Attribute) value to each of the provided temperatures. This is only valid for heating items, not hotwater.<br>
+			Force - will tell the processor to apply the schedule even if it has not changed from the current schedule.
 			day - mon, tue, wed, thu, fri, sat, sun<br>
 			until - HH:MM. 24 hour clock starting at 00:00 to 23:59. Following untils must be later than the previous until<br>
 			target - ON/OFF (productType: hotwater)  temperature value (productType: heating and trvcontrol)<br>
@@ -731,6 +735,7 @@ sub HiveHome_Product_Notify($$)
 		Sets the devices schedule profile.<br>
 		E.g. 	<code>set name weekProfile Thu off,06:30,on,07:15,off,16:00,on,21:30,off</code><br>
 				<code>set name weekProfile Thu 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0 Fri 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0</code><br>
+				<code>set name weekProfile Force IgnoreTemperatureOffset Thu 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0</code><br>
 		This will not modify the current profile for all unspecified days.
 		</li><br>	
 		<a name="childLock"></a>

@@ -890,17 +890,26 @@ sub HiveHome_Write_Product($$$$@)
         Log(4, "HiveHome_Write_Product(${cmd}): product type: ".$shash->{productType});
 
         if ($cmd eq 'weekprofile') {
-            my $weekString = join(" ", @args);
-            # Remove redundant '.0' elements from temperatures.
-            $weekString =~ s/[.]0//ig;
-
-            Log(3, "HiveHome_Write_Product(${cmd}): WeekProfile - ".$weekString);
-
             # Get the components heating offset.
             my $tempOffset = AttrVal($shash->{NAME}, 'temperatureOffset', 0);
             my $forceUpdateSchedule = lc(AttrVal($shash->{NAME}, 'forceUpdateSchedule', 'false'));
 
-            Log(3, "HiveHome_Write_Product(${cmd}): Temperature offset: ${tempOffset}, Force Update Schedule: ${forceUpdateSchedule}");
+            # Process the optional arguments. These must preceed the week profile string.
+            while ($args[0] && (lc($args[0]) eq 'ignoretemperatureoffset' || lc($args[0]) eq 'ito' || lc($args[0]) eq 'force')) {
+                if (lc($args[0]) eq 'ignoretemperatureoffset' || lc($args[0]) eq 'ito') {
+                    $tempOffset = 0;
+                } elsif (lc($args[0]) eq 'force') {
+                    $forceUpdateSchedule = 'true';
+                }
+                # Remove the optional argument.
+                shift(@args);
+            }
+
+            my $weekString = join(" ", @args);
+            # Remove redundant '.0' elements from temperatures.
+            $weekString =~ s/[.]0//ig;
+
+            Log(3, "HiveHome_Write_Product(${cmd}): Temperature offset: ${tempOffset}, Force Update Schedule: ${forceUpdateSchedule},  WeekProfile - ${weekString}");
 
             my $weekProfile = HiveHome_ParseWeekCmdString($weekString, $tempOffset);
             if (!defined($weekProfile)) {
