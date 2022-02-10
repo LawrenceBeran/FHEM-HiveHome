@@ -210,9 +210,7 @@ sub HiveHome_Product_Attr($$$$)
     my ( $cmd, $name, $attrName, $attrVal ) = @_;
     my $hash = $defs{$name};
 
-	Log(5, "HiveHome_Product_Attr: enter");
-
-	Log(3, "HiveHome_Product_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
+	Log(4, "HiveHome_Product_Attr: Enter  - Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
 	if ($attrName eq 'autoAlias' && $init_done) {
         if ($cmd eq 'set') {
@@ -238,8 +236,16 @@ sub HiveHome_Product_Attr($$$$)
 		# TODO - Verify parameter
 #        if (hhc_IsValidTemperature($attrVal))
 	} elsif ($attrName eq 'temperatureOffset') {
-		Log(2, "HiveHome_Product_Attr(${name} - $attrName): Entry!");
-		if (hhc_IsValidTemperatureOffset($attrVal)) {
+		Log(4, "HiveHome_Product_Attr(${name} - $attrName): Entry!");
+
+		if (!$init_done) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Initialisation not complete!");
+		} elsif (!defined($hash->{STATE}) || lc($hash->{STATE}) eq 'disconnected') {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Device disconnected!");			
+		} elsif (!hhc_IsValidTemperatureOffset($attrVal)) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
+			return "Invalid value provided ${attrVal}, must be a valid temperature number!";
+		} else {
 			# Test to see if the set temperatureOffset has been modified
 			my $curTempOffset = AttrVal($name, 'temperatureOffset', 0);
 			if ($curTempOffset != $attrVal) {
@@ -253,18 +259,15 @@ sub HiveHome_Product_Attr($$$$)
 					$dayProfile =~ s/[.]0//ig;
 					$weekProfileCmdString .= $dayHash{$day}.' '.$dayProfile.' ';
 				}
-				Log(2, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}!");
+				Log(4, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}!");
 				# Apply the new week schedule
 				fhem("set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}");
 				# TODO: Problem, the new attribute is not set before this is called!
 				#		The schedule will not be updated as it will not have changed.
 				#		Test to see if the 'IgnoreTemperatureOffset' argument and the modified command string works around this issue.
 			}
-		} else {
-			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
-			return "Invalid value provided ${attrVal}, must be a valid temperature number!";
 		}
-		Log(2, "HiveHome_Product_Attr(${name} - $attrName): Exit!");
+		Log(4, "HiveHome_Product_Attr(${name} - $attrName): Exit!");
 	} elsif ($attrName eq 'setScheduleFromTRVs') {
 		# TODO:
 	} elsif ($attrName eq 'forceUpdateSchedule') {
@@ -274,7 +277,7 @@ sub HiveHome_Product_Attr($$$$)
 		}
 	}
 
-	Log(3, "HiveHome_Product_Attr: exit");
+	Log(4, "HiveHome_Product_Attr: exit");
 	return undef;		
 }
 
@@ -282,7 +285,7 @@ sub HiveHome_Product_Set($$$$)
 {
 	my ($hash,$name,$cmd,@args) = @_;
 
-	Log(3, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
+	Log(4, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
 
 	my @argsCopy = @args;
 
@@ -291,7 +294,7 @@ sub HiveHome_Product_Set($$$$)
 
 	my $ret = IOWrite($hash, @argsCopy);
 
-	Log(3, "HiveHome_Product_Set: exit");
+	Log(4, "HiveHome_Product_Set: exit");
 
 	if (defined($ret))
 	{
@@ -387,13 +390,12 @@ sub HiveHome_Product_Parse($$$)
 			foreach my $day (@daysofweek) {
 				if (!defined($node->{internals}->{schedule}) || !defined($node->{internals}->{schedule}->{$day}) || "" ne $node->{internals}->{schedule}->{$day}) {
 					my $daySchedule = $node->{internals}->{schedule}->{$day};
-					if ($day eq $dayToday && defined($tempOffset) && $tempOffset != 0) {
-						# NOTE: Only offset the temperature for today as the other day schedules are not touched by the setting or getting process.
-
+					if (defined($tempOffset) && $tempOffset != 0) {
 						# If a temperatureOffset attribute has been applied to this heating component and the offset isnt '0'.
 						# Then remove the offset from the temperature values read from the component.
-						Log(4, "HiveHome_Product_Parse: Removing temperature offset ${tempOffset} from schedule!");
+						Log(5, "HiveHome_Product_Parse: Removing temperature offset ${tempOffset} from schedule - ${daySchedule}!");
 						$daySchedule = hhc_removeTemperatureOffsetFromSchedule($tempOffset, $daySchedule);
+						Log(5, "HiveHome_Product_Parse: New schedule ${daySchedule}!");
 					}
 
 					if (lc(InternalVal($shash->{NAME}, "WeekProfile_${day}", '')) ne lc($daySchedule)) {
