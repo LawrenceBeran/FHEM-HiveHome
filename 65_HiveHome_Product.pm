@@ -39,7 +39,7 @@ sub HiveHome_Product_Initialize($)
 						. "controlZoneHeating:1,0 "
 						. "controlZoneHeatingMinNumberOfTRVs "
 						. "setScheduleFromTRVs:1,0 "
-						. "forceUpdateSchedule:True,False"
+						. "forceUpdateSchedule:True,False "
 						. $readingFnAttributes;
 
 	Log(5, "HiveHome_Product_Initialize: exit");
@@ -212,7 +212,7 @@ sub HiveHome_Product_Attr($$$$)
 
 	Log(5, "HiveHome_Product_Attr: enter");
 
-	Log(4, "HiveHome_Product_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
+	Log(3, "HiveHome_Product_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
 	if ($attrName eq 'autoAlias' && $init_done) {
         if ($cmd eq 'set') {
@@ -237,28 +237,33 @@ sub HiveHome_Product_Attr($$$$)
 	} elsif ($attrName eq 'boostTemperature') {
 		# TODO - Verify parameter
 #        if (hhc_IsValidTemperature($attrVal))
-	} elsif ($attrName eq 'temperateOffset') {
+	} elsif ($attrName eq 'temperatureOffset') {
+		Log(2, "HiveHome_Product_Attr(${name} - $attrName): Entry!");
 		if (hhc_IsValidTemperatureOffset($attrVal)) {
-			# Test to see if the set temperateOffset has been modified
-			my $curTempOffset = AttrVal($name, 'temperateOffset', 0);
+			# Test to see if the set temperatureOffset has been modified
+			my $curTempOffset = AttrVal($name, 'temperatureOffset', 0);
 			if ($curTempOffset != $attrVal) {
 				# Push the entire week schedule onto the device to force the schedule temperatures to be updated with the new offset.
 				my $weekProfileCmdString = undef;
 				my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
+				my %dayHash = (monday => "mon", tuesday => "tue", wednesday => "wed", thursday => "thu", friday => "fri", saturday => "sat", sunday => "sun");
 				foreach my $day (@daysofweek) 
 				{
-					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day});
+					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day}, 0);
 					$dayProfile =~ s/[.]0//ig;
-					$weekProfileCmdString .= $day.' '.$dayProfile.' ';
+					$weekProfileCmdString .= $dayHash{$day}.' '.$dayProfile.' ';
 				}
+				Log(2, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile ${weekProfileCmdString}!");
 				# Apply the new week schedule
-				fhem("set ${name} schedule ${weekProfileCmdString}");
-				# TODO: possible problem, will the new attribute be set before this is called?
+				fhem("set ${name} weekprofile ${weekProfileCmdString}");
+				# TODO: Problem, the new attribute is not set before this is called!
+				#		The schedule will not be updated as it will not have changed.
 			}
 		} else {
 			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
 			return "Invalid value provided ${attrVal}, must be a valid temperature number!";
 		}
+		Log(2, "HiveHome_Product_Attr(${name} - $attrName): Exit!");
 	} elsif ($attrName eq 'setScheduleFromTRVs') {
 		# TODO:
 	} elsif ($attrName eq 'forceUpdateSchedule') {
@@ -268,7 +273,7 @@ sub HiveHome_Product_Attr($$$$)
 		}
 	}
 
-	Log(5, "HiveHome_Product_Attr: exit");
+	Log(3, "HiveHome_Product_Attr: exit");
 	return undef;		
 }
 
@@ -276,7 +281,7 @@ sub HiveHome_Product_Set($$$$)
 {
 	my ($hash,$name,$cmd,@args) = @_;
 
-	Log(5, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
+	Log(3, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
 
 	my @argsCopy = @args;
 
@@ -285,7 +290,7 @@ sub HiveHome_Product_Set($$$$)
 
 	my $ret = IOWrite($hash, @argsCopy);
 
-	Log(5, "HiveHome_Product_Set: exit");
+	Log(3, "HiveHome_Product_Set: exit");
 
 	if (defined($ret))
 	{
