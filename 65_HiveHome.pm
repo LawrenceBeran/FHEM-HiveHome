@@ -300,7 +300,7 @@ sub HiveHome_UpdateNodes()
                         my $numbTRVsRequired = AttrVal($hashHeating->{NAME}, 'controlZoneHeatingMinNumberOfTRVs', 3);
 
                         # If heating is not required from the zone TRVs but the heating is on...
-                        if (0 == $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working}) {
+                        if ($numbTRVsRequired > $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working}) {
                             # The TRVs do not require heat but the heating is on.
                             Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' TRV(s) not calling for heat but zone heating is on");
 
