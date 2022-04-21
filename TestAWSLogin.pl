@@ -1,23 +1,14 @@
 use strict;
 use warnings;
-use utf8;
 
 use LWP::UserAgent;
 use HTTP::Request;
 use JSON;
-use HTML::Parser;
 use Data::Dumper;
 use POSIX qw(strftime);
 use MIME::Base64;
-use Encode qw(decode encode);
-
 use Digest::SHA qw(sha256_hex hmac_sha256_hex hmac_sha256);
-use Digest::HMAC;
-
-#use bigint;
-#use bigint qw/hex oct/;
 use Math::BigInt;
-
 
 my $username = '<username>';
 my $password = '<password>';
@@ -315,18 +306,6 @@ my $secretBlock = decode_base64($secretBlockB64);
 #
 
 
-# {
-#   "ChallengeName":"PASSWORD_VERIFIER",
-#    "ChallengeParameters":{
-#       "SALT":"7c4f076023e6b785d153cbe9d5aced63",
-#       "SECRET_BLOCK":"czMBJnI4X++KbONM2WQ2yyNAE51RqU21KMw8n9GP/DcgiGisI0ag7QCkigzLGIaglTD1sJjSWDQAq/D7tLbA4cEsIhWKtuxh3p0AKIc2NJC0JDWZ59NErVLrbLeGF0Fd36pVSbpNL6oiwSRgOMvLWHzY6e4CT/YYBMdFyhfXMb8/36jjXDjBahoOvp1jkZSZmm9dIBWRbHkvdFmUWRTkdDpeA0RR0HHZo7ofghAwD0MN4v/wNkU8ffnMgsMpt3Hw/wKGqjuucjiMBAyB6pJQge18livB/E1yNLP0tWI/OW/WSdAe/munMWOG/oAN9f3/nak01eR7F2fjRgrdj0turtjTK/1XPUk33Nyg/2SwMNznIPJF+S51UbWUsJS61d+M44NJQzGPdMg06HVrQk5HHf8E7wI3pBpDL3eyIM2TpKtug7tb+Q8y/f6HlMYwlUWJ+xxSx0xhjjpzXU/vpByoACSTDHREkT69b8uTsWfkG7F184jafeHXJ0MomG0ZnLvpELNx4dj3LcSk7xkvJ3WeuLoFvcNz0llGe+gupJALV/p0+d3CifIr8TeJmB7e9wcvjOi2NCKEkTBV2iGJH08eRQJAosuBYYD3uJZMQQe/ewanNAgOjzdvKVnXDJgPDadYvDuaTJabr470vT7FOKI4lbDE5/hKZxI28zYw2zJAGcj8MK/+C08qqPvPO6U+NymSEYYJK+cxP5wF3/xjV2dXW/6mmRh196G4bWFC2UGb5MufeFPe2L6LcYHyJER+mLq3N12UC5sqODDgdxvk8zitYjSrLF68FcWW9Ij2+Kja95Ramq+UhHe3I2pLirHykgfiatN5dunf2Mlbv2On6B5TheqYPATiUvuf/QG0nifCabt66dlarj5DLQ1a5g8CwQ5g5qP1",
-#       "SRP_B":"ff2dd405507b85ad2052beaeb515820c18bf930a1af3d8ec42b7e576f02abd5733b0723daeb467eec73122cae3520d8bb6111259fd3bd6d1536e47db86ba72913b75c99bbaa322bf018f73162fa7d418b637a43e94455668834947bf54a344d6c50ad29eae6b321a430a0459066523c096877da3dfbdf236f941cd82f0ac47fba5ec37707dc5f0a165caa810cc335f151765fbe551dc0e2e2bc8bfc818fe656d7a81407552112c168300bf0f1bb217f76b45a13ae3bdcc73f72214e8a0daf87de689287c55e8730c681d602fc6c3da8e4aeb87e4ee65916e1393778385235b9005a44882e70ec53689025c672fe46655e4e750e923960756e980456ecce5b608a0702878ca5ae2134d8596158faee93aa92b23d19d69aac9b1ec8fa8e9510fb48bd354127eb06984cc5190950833f12fe8e4b6d1dfa65fa5807f0188fa70ecce09e4de8a639ae26458c5f925791d26c7b0260782d386c00a7982630a663226ebfb78fa3836e576c895e2d3b720d7171bdf0b1d5416b91907f349da25c030bb7b",
-#       "USERNAME":"a68c740a-8385-42d7-b8fb-ea5496094942",
-#       "USER_ID_FOR_SRP":"a68c740a-8385-42d7-b8fb-ea5496094942"
-#   }
-# }
-
-
 
 my $timeStamp = strftime("%a %b %d %H:%M:%S UTC %Y", localtime());
 $timeStamp =~ s/ 0(\d) / $1 /ig;
@@ -342,7 +321,6 @@ chomp($signature);
 
 # Python HiveHome implementation - https://github.com/Pyhass/Pyhiveapi/blob/master/pyhiveapi/apyhiveapi/api/hive_auth.py
 # Check out this PHP implementation - https://gist.github.com/jenky/a4465f73adf90206b3e98c3d36a3be4f
-# and this Java implementation - https://github.com/aws-samples/aws-cognito-java-desktop-app/blob/master/src/main/java/com/amazonaws/sample/cognitoui/AuthenticationHelper.java
 
 
 
