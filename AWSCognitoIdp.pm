@@ -388,7 +388,7 @@ sub refreshToken() {
         return undef;
     }
 
-    return decode_json($refreshTokenAuthResp->decoded_content);
+    return $refreshTokenAuthResp;
 }
 
 

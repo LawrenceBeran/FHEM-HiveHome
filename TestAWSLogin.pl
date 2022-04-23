@@ -5,14 +5,8 @@ use FindBin;
 use lib $FindBin::Bin;
 use AWSCognitoIdp;
 
-use LWP::UserAgent;
-use HTTP::Request;
 use JSON;
 use Data::Dumper;
-use POSIX qw(strftime);
-use MIME::Base64;
-use Digest::SHA qw(sha256_hex hmac_sha256_hex hmac_sha256);
-use Math::BigInt lib => 'GMP';
 
 my $username = '<username>';
 my $password = '<password>';
@@ -52,6 +46,12 @@ if ($authResult) {
 
 
     my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
+
+    if (!$refreshAuthResult) {
+
+    } else {
+        print(Dumper($refreshAuthResult));
+    }
 
 }
 
