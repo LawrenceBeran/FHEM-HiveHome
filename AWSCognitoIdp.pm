@@ -10,7 +10,7 @@ use Data::Dumper;
 use POSIX qw(strftime);
 use MIME::Base64;
 use Digest::SHA qw(sha256_hex hmac_sha256_hex hmac_sha256);
-use Math::BigInt;
+use Math::BigInt lib => 'GMP';
 use Carp qw(croak);
 
 
@@ -86,12 +86,6 @@ sub new        # constructor, this method makes an object that belongs to class 
     $self->{ua} = LWP::UserAgent->new;
 
 
-    $self->{BIG_N}  = Math::BigInt->from_hex($N_HEX);
-    $self->{G}      = Math::BigInt->from_hex($G_HEX);
-    $self->{K}      = Math::BigInt->from_hex($self->hexHash('00'.$N_HEX.'0'.$G_HEX));
-
-    $self->{smallA} = $self->generateSmallA();
-    $self->{largeA} = $self->generateLargeA();
 
 
     return $self;        # a constructor always returns an blessed() object
@@ -170,13 +164,90 @@ sub clientSecret($$)
 # Public methods
 #############################
 
-sub login($) {
-    my ($self) = @_;
+# TODO: Make this call a bit more generic, currently it is specific to the SRP AUTH process.
+sub initAuthentication($$) {
+    my ($self, $dataAuth) = @_;
 
     #
     # Initiate authentication...
     #   - https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
     #
+
+    if ($self->{useAdvancedSecurity}) {
+        my $userContextData = {
+                EncodedData => $self->generateUserContextData()
+            };
+        $dataAuth->{UserContextData} = $userContextData;
+    }
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataAuth));
+
+    my $requestInitAuth = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('InitiateAuth'), to_json($dataAuth));
+    my $respInitAuth = $self->{ua}->request($requestInitAuth);
+
+    if (!$respInitAuth->is_success) {
+        $self->_log(1, $respInitAuth->decoded_content);
+        return undef;
+    }
+
+    my $dataInitAuth = decode_json($respInitAuth->decoded_content);
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataInitAuth));
+
+    return $dataInitAuth;
+}
+
+sub challengeResponse($$) {
+    my ($self, $dataChallengeResponse) = @_;
+
+    if ($self->{useAdvancedSecurity}) {
+        my $userContextData = {
+            EncodedData => $self->generateUserContextData()
+        };
+        $dataChallengeResponse->{UserContextData} = $userContextData;
+    }
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataChallengeResponse));
+
+    my $requestChallengeResponse = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('RespondToAuthChallenge'), to_json($dataChallengeResponse));
+    my $respChallengeResponse = $self->{ua}->request($requestChallengeResponse);
+
+    if (!$respChallengeResponse->is_success) {
+        $self->_log(1, $respChallengeResponse->decoded_content);
+        return undef;
+    }
+
+    my $dataChallengeResponseResponse = decode_json($respChallengeResponse->decoded_content);
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataChallengeResponseResponse));
+
+
+    # TODO: Call confirm device.
+
+    # https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_ConfirmDevice.html#API_ConfirmDevice_RequestParameters
+ 
+#    my $tokens = {
+#            idToken => $dataChallengeResponseResponse->{AuthenticationResult}->{IdToken}
+#        ,   refreshToken => $dataChallengeResponseResponse->{AuthenticationResult}->{RefreshToken}
+#        ,   accessToken => $dataChallengeResponseResponse->{AuthenticationResult}->{AccessToken}
+#        ,   expiresIn => $dataChallengeResponseResponse->{AuthenticationResult}->{ExpiresIn}
+#        ,   deviceKey => $dataChallengeResponseResponse->{AuthenticationResult}->{NewDeviceMetadata}->{DeviceKey}
+#    };
+
+    return $dataChallengeResponseResponse->{AuthenticationResult};
+}
+
+sub loginSRP($) {
+    my ($self) = @_;
+
+    # Prepare SRP details for authentication.
+
+    $self->{BIG_N}  = Math::BigInt->from_hex($N_HEX);
+    $self->{G}      = Math::BigInt->from_hex($G_HEX);
+    $self->{K}      = Math::BigInt->from_hex($self->hexHash('00'.$N_HEX.'0'.$G_HEX));
+
+    $self->{smallA} = $self->generateSmallA();
+    $self->{largeA} = $self->generateLargeA();
+
+
+    # See for the call order if devices are required to be used for refresh tokens.
+    # https://aws.amazon.com/premiumsupport/knowledge-center/cognito-user-pool-remembered-devices/
 
     my $dataAuth = {
             AuthFlow => 'USER_SRP_AUTH'
@@ -187,38 +258,16 @@ sub login($) {
             }
         };
 
-    if ($self->{useAdvancedSecurity}) {
-        my $userContextData = {
-                EncodedData => $self->generateUserContextData()
-            };
-        $dataAuth->{UserContextData} = $userContextData;
+    my $dataInitAuth = $self->initAuthentication($dataAuth);
+
+    if (!$dataInitAuth) {
+        $self->_log(1, 'Error in call to initAuthentication!');
+        return undef;
     }
 
-    print(Dumper($dataAuth));
-
-    my $header = [  'X-Amz-Target' => 'AWSCognitoIdentityProviderService.InitiateAuth'
-                ,   'Content-Type' => 'application/x-amz-json-1.1'];
-
-    # AWS URL is constructed something like:
-    #   https://cognito-idp.<region>.amazonaws.com/
-    # e.g., https://cognito-idp.<region>.amazonaws.com/
-    #
-    # See - https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
-#    my $urlInitAuth = 'https://sso.hivehome.com/auth/login?client=v3-web-prod';
-    my $urlInitAuth = 'https://cognito-idp.'.$self->{region}.'.amazonaws.com/';
-
-    my $requestInitAuth = HTTP::Request->new('POST', $urlInitAuth, $header, to_json($dataAuth));
-    my $respInitAuth = $self->{ua}->request($requestInitAuth);
-
-    if (!$respInitAuth->is_success) {
-        print($respInitAuth->decoded_content);
-        die $respInitAuth->status_line;
-    }
-
-    my $dataInitAuth = decode_json($respInitAuth->decoded_content);
     if ($dataInitAuth->{ChallengeName} ne $PASSWORD_VERIFIER_CHALLENGE) {
-        print('The '.$dataInitAuth->{ChallengeName}.' challenge is not supported!');
-        die('The '.$dataInitAuth->{ChallengeName}.' challenge is not supported!');
+        $self->_log(1, 'The '.$dataInitAuth->{ChallengeName}.' challenge is not supported!');
+        return undef;
     }
 
     #
@@ -227,6 +276,7 @@ sub login($) {
     #
 
     my $challangeParameters = $dataInitAuth->{ChallengeParameters};
+
     my $userID = $challangeParameters->{USER_ID_FOR_SRP};
     my $saltHex = $challangeParameters->{SALT};
     my $srpBHex = $challangeParameters->{SRP_B};
@@ -241,7 +291,7 @@ sub login($) {
     my $signature = encode_base64(hmac_sha256($msg, $hkdf));
     chomp($signature);
 
-    my $dataChallangeResponse = {
+    my $dataChallengeResponse = {
             ChallengeResponses => {
                 USERNAME => $userID
             ,   PASSWORD_CLAIM_SECRET_BLOCK => $secretBlockB64
@@ -252,42 +302,135 @@ sub login($) {
         ,   ClientId => $self->{clientId}
         };
 
-    if ($self->{useAdvancedSecurity}) {
-        my $userContextData = {
-            EncodedData => $self->generateUserContextData()
-        };
-        $dataChallangeResponse->{UserContextData} = $userContextData;
+    my $respChallengeResponse = $self->challengeResponse($dataChallengeResponse);
+
+    if (!$respChallengeResponse) {
+        $self->_log(1, 'Error in call to challengeResponse!');
+        return undef;
     }
 
-    print(Dumper($dataChallangeResponse));
+    if ($respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}) {
 
-    $header = [  'X-Amz-Target' => 'AWSCognitoIdentityProviderService.RespondToAuthChallenge'
-                ,   'Content-Type' => 'application/x-amz-json-1.1'];
+        # See - https://aws.amazon.com/premiumsupport/knowledge-center/cognito-user-pool-remembered-devices/
+        #       https://stackoverflow.com/questions/52499526/device-password-verifier-challenge-response-in-amazon-cognito-using-boto3-and-wa
+        # For details on how to make this call.
 
-    my $requestChallengeResponse = HTTP::Request->new('POST', $urlInitAuth, $header, to_json($dataChallangeResponse));
-    my $respChallengeResponse = $self->{ua}->request($requestChallengeResponse);
 
-    if (!$respChallengeResponse->is_success) {
-        print($respChallengeResponse->decoded_content);
-        die $respChallengeResponse->status_line;
+        my $randomPassword = encode_base64($self->generateRandom(40));
+        my $fullPassword = $respChallengeResponse->{NewDeviceMetadata}->{DeviceGroupKey}.$respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}.':'.$randomPassword;
+        my $fullPasswordHash = Math::BigInt->from_bytes($self->hash_sha256($fullPassword));
+        my $salt = $self->generateRandom(16);
+
+
+        my $sum = $self->bigIntHash($salt->copy()->badd($fullPasswordHash));
+
+        my $paswordVerifierB64 = encode_base64($self->padHex($self->{G}->copy()->bmodpow($sum, $self->{BIG_N})->to_hex()));
+        chomp($paswordVerifierB64);
+        my $saltB64 = encode_base64($salt);
+        chomp($saltB64);
+
+        my $dataConfirmDevice = {
+                AccessToken => $respChallengeResponse->{AccessToken}
+            ,   DeviceKey => $respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}
+            ,   DeviceName => 'User Agent'
+            ,   DeviceSecretVerifierConfig => { 
+                    PasswordVerifier => $paswordVerifierB64
+                ,   Salt => $saltB64
+               }
+            } ;
+
+        $self->_log($self->{logAPIResponsesLevel}, Dumper($dataConfirmDevice));
+
+        my $requestConfirmDevice = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('ConfirmDevice'), to_json($dataConfirmDevice));
+        my $respConfirmDevice = $self->{ua}->request($requestConfirmDevice);
+
+        if (!$respConfirmDevice->is_success) {
+            $self->_log(1, $respConfirmDevice->decoded_content);
+            return undef;
+        }
+        
+        my $respConfirmDeviceResponse = decode_json($respConfirmDevice->decoded_content);
+        $self->_log($self->{logAPIResponsesLevel}, Dumper($respConfirmDeviceResponse));
+
+        # TODO: Not sure if this response means I need to do anything else, but I can now
+        #       refresh the clients tokens so probs nothing more is required.
+        if ($respConfirmDeviceResponse->{UserConfirmationNecessary}) {
+
+            # Need to provide response!
+            my $val = '';
+        }
     }
-    print($respChallengeResponse->decoded_content);
 
-    my $dataChallengeResponse = decode_json($respChallengeResponse->decoded_content);
-
-
-
+    return $respChallengeResponse;
 }
+
+# Note: May not return a new RefreshToken.
+sub refreshToken() {
+    my ($self, $refreshToken, $deviceKey) = @_;
+
+    #
+    # Initiate authentication...
+    #   - https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
+    #
+
+    my $refreshTokenAuth = {
+            AuthFlow => 'REFRESH_TOKEN_AUTH'
+        ,   ClientId => $self->{clientId}
+        ,   AuthParameters => {
+                    REFRESH_TOKEN => $refreshToken
+                ,   DEVICE_KEY => $deviceKey
+            }
+        };
+
+    my $refreshTokenAuthResp = $self->initAuthentication($refreshTokenAuth);
+
+    if (!$refreshTokenAuthResp) {
+        return undef;
+    }
+
+    return decode_json($refreshTokenAuthResp->decoded_content);
+}
+
 
 #############################
 #   Internal helper methods
 #############################
+
+sub _getAWSURL($) {
+    my ($self) = @_;
+    # See - https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
+#    return 'https://sso.hivehome.com/auth/login?client=v3-web-prod';    
+    return 'https://cognito-idp.'.$self->{region}.'.amazonaws.com/';
+}
+
+sub _getHeaders($$) {
+    my ($self, $text) = @_;
+    my $header = [  'X-Amz-Target' => 'AWSCognitoIdentityProviderService.'.$text
+                ,   'Content-Type' => 'application/x-amz-json-1.1'];
+    return $header;
+}
+
+sub _log($$$)
+{
+    my ( $self, $loglevel, $text ) = @_;
+
+    my $xline = (caller(0))[2];
+    my $xsubroutine = (caller(1))[3];
+    my $sub = (split( ':', $xsubroutine ))[2];
+
+    main::Log3("AWSCognitoIdp", $loglevel, "$sub.$xline ".$text);
+}
 
 sub hash_sha256($$) {
     my ($self, $data) = @_;
     my $temp = sha256_hex($data);
     my $hash = sprintf('%-*s', 64, $temp);
     return $hash;
+}
+
+sub bigIntHash($$) {
+    my ($self, $value) = @_;
+    return $self->hexHash($value->to_hex());
 }
 
 sub hexHash($$) {
