@@ -338,7 +338,7 @@ sub refreshToken() {
         return undef;
     }
 
-    return $refreshTokenAuthResp;
+    return $refreshTokenAuthResp->{AuthenticationResult};
 }
 
 

@@ -1,28 +1,46 @@
 use strict;
 use warnings;
 
-use FindBin;
-use lib $FindBin::Bin;
+use lib '.';
 use AWSCognitoIdp;
-
 use JSON;
 use Data::Dumper;
+use REST::Client;
 
-my $username = '<username>';
-my $password = '<password>';
+my $credentials_filename = 'credentials.json';
+my $username = 'XXXX';
+my $password = 'XXXX';
+
+
+### Load credentials from file
+my $credentialsString = do {
+    open(my $fhIn, "<", $credentials_filename);
+    local $/;
+    <$fhIn>
+};
+
+if (defined($credentialsString))
+{
+    my $credentials = decode_json($credentialsString);
+    $username = $credentials->{username};
+    $password = $credentials->{password};
+}
+
+
+my $loginClient = REST::Client->new();
+
 
 
 my $ua = LWP::UserAgent->new;
 my $url = 'https://sso.hivehome.com/';
 
-my $resp = $ua->get($url);
-if (!$resp->is_success) {
-    print($resp->decoded_content);
-    die $resp->status_line;
-}
 
-$resp->decoded_content =~ m/<script>(.*?)<\/script>/;
+$loginClient->GET($url);
+if (200 != $loginClient->responseCode()) {
 
+} 
+
+$loginClient->responseContent() =~ m/<script>(.*?)<\/script>/;
 my $scriptData = '{"'.$1.'}';
 $scriptData =~ s/,/,"/ig;
 $scriptData =~ s/=/":/ig;
