@@ -2,6 +2,9 @@ package HiveHomeAPI;
 use strict;
 use warnings;
 
+use lib '.';
+use AWSCognitoIdp;
+
 use REST::Client;
 use JSON;
 use Data::Dumper;
@@ -158,6 +161,15 @@ sub accessToken($$)
     return $self->{accessToken};
 }
 
+sub deviceKey($$) {
+    my ($self, $value) = @_;
+    if (@_ == 2) 
+    {
+        $self->{deviceKey} = $value;
+    }
+    return $self->{deviceKey};
+}
+
 sub getToken($) 
 {
     my $self = shift;
@@ -172,6 +184,7 @@ sub getToken($)
                 token => $self->{token}
             ,   refreshToken => $self->{refreshToken}
             ,   accessToken => $self->{accessToken}
+            ,   deviceKey => $self->{deviceKey}
         };
     }
     return $token;
@@ -322,49 +335,90 @@ sub _getHeaders($$)
     return $headers;
 }
 
+sub _getLoginDetails($) {
+    my ($self) = @_;
+
+    my $loginDetails = undef;
+
+    # NOTE: We could cache the logon details so that we only get them the first time required
+    #       and use the cached versions for each following request.
+    #       The token has an 3600 second validity so it isnt a huge issue to call this once an hour!
+
+    my $loginClient = REST::Client->new();
+    my $path = 'https://sso.hivehome.com/';
+    $loginClient->GET($path);
+    if (200 != $loginClient->responseCode()) 
+    {
+        # Failed to connect to API
+        $self->_log(1, "Login: ".$loginClient->responseContent());
+    } 
+    else 
+    {
+        $loginClient->responseContent() =~ m/<script>(.*?)<\/script>/;
+        my $scriptData = '{"'.$1.'}';
+        $scriptData =~ s/,/,"/ig;
+        $scriptData =~ s/=/":/ig;
+        $scriptData =~ s/window.//ig;
+
+        my $data = decode_json($scriptData);
+
+        $loginDetails = {
+                region => (split('_', $data->{HiveSSOPoolId}))[0]
+            ,   poolId => (split('_', $data->{HiveSSOPoolId}))[1]
+            ,   clientId => $data->{HiveSSOPublicCognitoClientId}
+        };
+
+        $self->_log($self->{logAPIResponsesLevel}, "apiGET(path): ${path}");
+        $self->_log($self->{logAPIResponsesLevel}, "apiGET(sent): N/A");
+        $self->_log($self->{logAPIResponsesLevel}, "apiGET(resp): ".$loginClient->responseContent());
+    }
+
+    return $loginDetails;
+}
+
 sub _login($) 
 {
     my $self = shift;
 
     $self->{token} = undef;
 
-    my $sessions = {
-                username => $self->{userName}
-            ,   password => $self->{password}
-        };
+    my $loginDetails = $self->_getLoginDetails();
+    if (!$loginDetails) {
+        $self->_log(1, "Login: Failed to get logon details!");
+    } else {
+        my $awsAuth = AWSCognitoIdp->new(userName => $self->{userName}, password => $self->{password}, 
+                    region => $loginDetails->{region}, poolId => $loginDetails->{poolId}, clientId => $loginDetails->{clientId});
 
-    my $path = 'cognito/login';
-    $self->{client}->POST($path, encode_json($sessions), $self->_getHeaders());
-    if (200 != $self->{client}->responseCode()) 
-    {
-        # Failed to connect to API
-        $self->_log(1, "Login: ".$self->{client}->responseContent());
-    } 
-    else 
-    {
-        my $response = from_json($self->{client}->responseContent());
+        if ($self->{refreshToken}) {
+            # We have a refresh token, use it rather than log on again!
+            my $refreshAuthResult = $awsAuth->refreshToken($self->{refreshToken}, $self->{deviceKey});
 
-        if (defined $response->{user}) 
-        {
-            $self->{userId}           = $response->{user}{id};
+            if (!$refreshAuthResult) {
+                $self->_log(1, "Login: Failed to refresh the access token!");
+            } else {
+                $self->{token}          = $refreshAuthResult->{IdToken};
+                $self->{accessToken}    = $refreshAuthResult->{AccessToken};
+            }
+
+        } else {
+            # Extract the session ID from the response...
+            my $authResult = $awsAuth->loginSRP();
+            if ($authResult) 
+            {
+                $self->{token}          = $authResult->{IdToken};
+                $self->{refreshToken}   = $authResult->{RefreshToken};
+                $self->{accessToken}    = $authResult->{AccessToken};
+                $self->{deviceKey}      = $authResult->{NewDeviceMetadata}->{DeviceKey};
+
+                # TODO: We should save the RefreshToken and DeviceKey in a file in case of a server restart.
+            } 
+            else 
+            {
+                # An error has occured
+                $self->_log(1, "Login: Failed to logon to HiveHome!");
+            }
         }
-        # Extract the session ID from the response...
-        if (defined $response->{token}) 
-        {
-            $self->{token}          = $response->{token};
-            $self->{refreshToken}   = $response->{refreshToken};
-            $self->{accessToken}    = $response->{accessToken};
-        } 
-        else 
-        {
-            # An error has occured
-            $self->_log(1, "Login: ".Dumper(from_json($self->{client}->responseContent())));
-            # TODO: break down the error and only report the detail not the JSON
-        }
 
-        $self->_log($self->{logAPIResponsesLevel}, "apiPOST(path): ${path}");
-        $self->_log($self->{logAPIResponsesLevel}, "apiPOST(sent): ".Dumper($sessions));
-        $self->_log($self->{logAPIResponsesLevel}, "apiPOST(resp): ".Dumper(from_json($self->{client}->responseContent())));
     }
 
     # If undef, then failed to connect!
@@ -422,7 +476,6 @@ sub _isTokenValid($$)
             }
         }
     }
-
     return $expired;
 }
 

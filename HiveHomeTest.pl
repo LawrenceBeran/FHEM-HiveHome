@@ -32,6 +32,7 @@ my $token_filename = 'HiveHome-token.json';
 my $token = undef;
 my $refreshToken = undef;
 my $accessToken = undef;
+my $deviceKey = undef;
 
 ### Load the previous token from file
 my $tokenString = do {
@@ -46,11 +47,12 @@ if (defined($tokenString))
     $token = $tokens->{token};
     $refreshToken = $tokens->{refreshToken};
     $accessToken = $tokens->{accessToken};
+    $deviceKey = $tokens->{deviceKey};
 }
 
 ### Connect to the HiveHomeAPI
 my $hiveHomeClient = HiveHomeInterface->new(userName => $username, password => $password, token => $token,
-                                        refreshToken => $refreshToken, accessToken => $accessToken);
+                                        refreshToken => $refreshToken, accessToken => $accessToken, deviceKey => $deviceKey);
 
 
 
