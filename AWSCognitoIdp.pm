@@ -173,64 +173,64 @@ sub initAuthentication($$) {
     #   - https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
     #
 
-    if ($self->{useAdvancedSecurity}) {
-        my $userContextData = {
-                EncodedData => $self->generateUserContextData()
-            };
-        $dataAuth->{UserContextData} = $userContextData;
-    }
-    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataAuth));
+    $dataAuth = $self->_addUserContextData($dataAuth);
 
-    my $requestInitAuth = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('InitiateAuth'), to_json($dataAuth));
-    my $respInitAuth = $self->{ua}->request($requestInitAuth);
+    my $dataAuthResponse = $self->_postData($dataAuth, $self->_getHeaders('InitiateAuth'));
 
-    if (!$respInitAuth->is_success) {
-        $self->_log(1, $respInitAuth->decoded_content);
-        return undef;
-    }
-
-    my $dataInitAuth = decode_json($respInitAuth->decoded_content);
-    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataInitAuth));
-
-    return $dataInitAuth;
+    return $dataAuthResponse;
 }
 
 sub challengeResponse($$) {
     my ($self, $dataChallengeResponse) = @_;
 
-    if ($self->{useAdvancedSecurity}) {
-        my $userContextData = {
-            EncodedData => $self->generateUserContextData()
-        };
-        $dataChallengeResponse->{UserContextData} = $userContextData;
-    }
-    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataChallengeResponse));
+    $dataChallengeResponse = $self->_addUserContextData($dataChallengeResponse);
 
-    my $requestChallengeResponse = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('RespondToAuthChallenge'), to_json($dataChallengeResponse));
-    my $respChallengeResponse = $self->{ua}->request($requestChallengeResponse);
-
-    if (!$respChallengeResponse->is_success) {
-        $self->_log(1, $respChallengeResponse->decoded_content);
-        return undef;
-    }
-
-    my $dataChallengeResponseResponse = decode_json($respChallengeResponse->decoded_content);
-    $self->_log($self->{logAPIResponsesLevel}, Dumper($dataChallengeResponseResponse));
-
-
-    # TODO: Call confirm device.
-
-    # https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_ConfirmDevice.html#API_ConfirmDevice_RequestParameters
- 
-#    my $tokens = {
-#            idToken => $dataChallengeResponseResponse->{AuthenticationResult}->{IdToken}
-#        ,   refreshToken => $dataChallengeResponseResponse->{AuthenticationResult}->{RefreshToken}
-#        ,   accessToken => $dataChallengeResponseResponse->{AuthenticationResult}->{AccessToken}
-#        ,   expiresIn => $dataChallengeResponseResponse->{AuthenticationResult}->{ExpiresIn}
-#        ,   deviceKey => $dataChallengeResponseResponse->{AuthenticationResult}->{NewDeviceMetadata}->{DeviceKey}
-#    };
+    my $dataChallengeResponseResponse = $self->_postData($dataChallengeResponse, $self->_getHeaders('RespondToAuthChallenge'));
 
     return $dataChallengeResponseResponse->{AuthenticationResult};
+}
+
+sub confirmDevice($$) {
+    my ($self, $respChallengeResponse) = @_;
+
+    if ($respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}) {
+
+        # See - https://aws.amazon.com/premiumsupport/knowledge-center/cognito-user-pool-remembered-devices/
+        #       https://stackoverflow.com/questions/52499526/device-password-verifier-challenge-response-in-amazon-cognito-using-boto3-and-wa
+        # For details on how to make this call.
+
+        my $randomPassword = encode_base64($self->generateRandom(40));
+        my $fullPassword = $respChallengeResponse->{NewDeviceMetadata}->{DeviceGroupKey}.$respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}.':'.$randomPassword;
+        my $fullPasswordHash = Math::BigInt->from_bytes($self->hash_sha256($fullPassword));
+        my $salt = $self->generateRandom(16);
+
+        my $sum = $self->bigIntHash($salt->copy()->badd($fullPasswordHash));
+
+        my $paswordVerifierB64 = encode_base64($self->padHex($self->{G}->copy()->bmodpow($sum, $self->{BIG_N})->to_hex()));
+        chomp($paswordVerifierB64);
+        my $saltB64 = encode_base64($salt);
+        chomp($saltB64);
+
+        my $dataConfirmDevice = {
+                AccessToken => $respChallengeResponse->{AccessToken}
+            ,   DeviceKey => $respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}
+            ,   DeviceName => 'User Agent'
+            ,   DeviceSecretVerifierConfig => { 
+                    PasswordVerifier => $paswordVerifierB64
+                ,   Salt => $saltB64
+               }
+            } ;
+
+        my $respConfirmDeviceResponse = $self->_postData($dataConfirmDevice, $self->_getHeaders('ConfirmDevice'));
+
+        # TODO: Not sure if this response means I need to do anything else, but I can now
+        #       refresh the clients tokens so probs nothing more is required.
+        if ($respConfirmDeviceResponse->{UserConfirmationNecessary}) {
+
+            # Need to provide response!
+            my $val = '';
+        }
+    }
 }
 
 sub loginSRP($) {
@@ -309,57 +309,7 @@ sub loginSRP($) {
         return undef;
     }
 
-    if ($respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}) {
-
-        # See - https://aws.amazon.com/premiumsupport/knowledge-center/cognito-user-pool-remembered-devices/
-        #       https://stackoverflow.com/questions/52499526/device-password-verifier-challenge-response-in-amazon-cognito-using-boto3-and-wa
-        # For details on how to make this call.
-
-
-        my $randomPassword = encode_base64($self->generateRandom(40));
-        my $fullPassword = $respChallengeResponse->{NewDeviceMetadata}->{DeviceGroupKey}.$respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}.':'.$randomPassword;
-        my $fullPasswordHash = Math::BigInt->from_bytes($self->hash_sha256($fullPassword));
-        my $salt = $self->generateRandom(16);
-
-
-        my $sum = $self->bigIntHash($salt->copy()->badd($fullPasswordHash));
-
-        my $paswordVerifierB64 = encode_base64($self->padHex($self->{G}->copy()->bmodpow($sum, $self->{BIG_N})->to_hex()));
-        chomp($paswordVerifierB64);
-        my $saltB64 = encode_base64($salt);
-        chomp($saltB64);
-
-        my $dataConfirmDevice = {
-                AccessToken => $respChallengeResponse->{AccessToken}
-            ,   DeviceKey => $respChallengeResponse->{NewDeviceMetadata}->{DeviceKey}
-            ,   DeviceName => 'User Agent'
-            ,   DeviceSecretVerifierConfig => { 
-                    PasswordVerifier => $paswordVerifierB64
-                ,   Salt => $saltB64
-               }
-            } ;
-
-        $self->_log($self->{logAPIResponsesLevel}, Dumper($dataConfirmDevice));
-
-        my $requestConfirmDevice = HTTP::Request->new('POST', $self->_getAWSURL(), $self->_getHeaders('ConfirmDevice'), to_json($dataConfirmDevice));
-        my $respConfirmDevice = $self->{ua}->request($requestConfirmDevice);
-
-        if (!$respConfirmDevice->is_success) {
-            $self->_log(1, $respConfirmDevice->decoded_content);
-            return undef;
-        }
-        
-        my $respConfirmDeviceResponse = decode_json($respConfirmDevice->decoded_content);
-        $self->_log($self->{logAPIResponsesLevel}, Dumper($respConfirmDeviceResponse));
-
-        # TODO: Not sure if this response means I need to do anything else, but I can now
-        #       refresh the clients tokens so probs nothing more is required.
-        if ($respConfirmDeviceResponse->{UserConfirmationNecessary}) {
-
-            # Need to provide response!
-            my $val = '';
-        }
-    }
+    $self->confirmDevice($respChallengeResponse);
 
     return $respChallengeResponse;
 }
@@ -395,6 +345,36 @@ sub refreshToken() {
 #############################
 #   Internal helper methods
 #############################
+
+sub _postData($$$) {
+    my ($self, $postData, $headers) = @_;
+
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($postData));
+
+    my $requestPostData = HTTP::Request->new('POST', $self->_getAWSURL(), $headers, to_json($postData));
+    my $respPostData = $self->{ua}->request($requestPostData);
+
+    if (!$respPostData->is_success) {
+        $self->_log(1, $respPostData->decoded_content);
+        return undef;
+    }
+
+    my $respPostDataJSON = decode_json($respPostData->decoded_content);
+    $self->_log($self->{logAPIResponsesLevel}, Dumper($respPostDataJSON));
+
+    return $respPostDataJSON
+}
+
+sub _addUserContextData($$) {
+    my ($self, $package) = @_;
+    if ($self->{useAdvancedSecurity}) {
+        my $userContextData = {
+            EncodedData => $self->generateUserContextData()
+        };
+        $package->{UserContextData} = $userContextData;
+    }
+    return $package;
+}
 
 sub _getAWSURL($) {
     my ($self) = @_;
