@@ -161,6 +161,15 @@ sub devicePassword($$)
     return $self->{devicePassword};
 }
 
+sub deviceKey($$) {
+    my ($self, $value) = @_;
+    if (@_ == 2) 
+    {
+        $self->{deviceKey} = $value;
+    }
+    return $self->{deviceKey};
+}
+
 sub loginDevice($)
 {
     my $self = shift;
