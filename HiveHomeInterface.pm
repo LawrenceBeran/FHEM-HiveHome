@@ -2,6 +2,7 @@ package HiveHomeInterface;
 use strict;
 use warnings;
 
+use lib '.';
 use HiveHomeAPI;
 use JSON;
 use Data::Dumper;

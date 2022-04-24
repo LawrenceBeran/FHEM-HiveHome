@@ -21,7 +21,7 @@ sub _getHiveHomeInterface($)
 
         $hash->{HIVEHOME}{interface} = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
                                             token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-                                            accessToken => $hash->{HIVEHOME}{accessToken});
+                                            accessToken => $hash->{HIVEHOME}{accessToken}, deviceKey => $hash->{HIVEHOME}{deviceKey});
     }
     return $hash->{HIVEHOME}{interface};
 }
@@ -376,6 +376,7 @@ sub HiveHome_UpdateNodes()
         $hash->{HIVEHOME}{sessionToken} = $token->{token};
         $hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
         $hash->{HIVEHOME}{accessToken} = $token->{accessToken};
+        $hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
     }
 
 	Log(5, "HiveHome_UpdateNodes: exit");
@@ -1686,6 +1687,7 @@ sub HiveHome_ctrl_Write($$$@)
         $hash->{HIVEHOME}{sessionToken} = $token->{token};
         $hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
         $hash->{HIVEHOME}{accessToken} = $token->{accessToken};
+        $hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
 
         if (!defined($ret))
         {
