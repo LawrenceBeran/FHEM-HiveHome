@@ -315,14 +315,14 @@ sub HiveHome_Device_Parse($$$)
 		readingsBulkUpdate($shash, "state", $myState);
 		readingsEndUpdate($shash, 1);
 
-		HiveHome_Device_SetAlias($shash, $shash->{NAME});
+		HiveHome_Device_SetAlias($shash, $shash->{name});
 	}
 
 #	$shash->{STATE} = $myState;
 
 	Log(5, "HiveHome_Device_Parse: exit");
 
-	return $shash->{NAME};
+	return $shash->{name};
 }
 
 1;

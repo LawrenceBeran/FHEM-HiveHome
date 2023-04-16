@@ -47,7 +47,6 @@ sub HiveHome_Initialize($)
 	$hash->{DefFn}    = "HiveHome_Define";
 	$hash->{UndefFn}  = "HiveHome_Undefine";
 	
-    $hash->{HIVEHOME}{client} = undef;
     $hash->{helper}->{sendQueue} = [];
 
 	Log(5, "HiveHome_Initialize: exit");

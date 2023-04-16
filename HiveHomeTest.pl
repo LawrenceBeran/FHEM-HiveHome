@@ -74,11 +74,17 @@ my $tests = {
 # Test getting devices and products calls.
 
 my @devices = $hiveHomeClient->getDevices();
-# print("Devices: ".Dumper(@devices)."\n");
+### Save the devices
+#open(my $fhOutDevices, ">", "devices.json");
+#print($fhOutDevices encode_json(\@devices));
+#close($fhOutDevices);  
+
 
 my @products = $hiveHomeClient->getProducts();
-print("Products: ".Dumper(@products)."\n");
-
+### Save the products
+#open(my $fhOutProducts, ">", "products.json");
+#print($fhOutProducts encode_json(\@products));
+#close($fhOutProducts);  
 
 # Get found products that can be tested (currently only supports single zone and single trvcontrol)
 my ($heatingItem) = first { 'heating' eq lc($_->{type}) } @products;
@@ -356,6 +362,9 @@ sub PrintCurrentHolidayMode {
 
 sub Log3
 {
+    my ( $self, $loglevel, $text ) = @_;
+
+    print($text);
     # This subroutine mimics the interface of the FHEM defined Log so that the test does not crash.
     my $var = '';
 }
