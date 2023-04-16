@@ -153,6 +153,11 @@ sub getDevices($)
                 $dev->{internals}->{zone} = $deviceAPI->{state}->{zone};
             }
 
+			if (defined($deviceAPI->{state}->{zoneName}))
+			{
+				$dev->{internals}->{zoneName} = $deviceAPI->{state}->{zoneName};
+			}
+
             if (lc($deviceAPI->{type}) eq 'trv')
             {
                 # For TRVs:
@@ -548,6 +553,33 @@ sub cancelTRVControlBoostMode($$)
 
     return $self->_cancelHeatingBoostMode($trvControlPath, $id);
 }
+
+# Note: 'boilermodule' and 'thermostatui' types also support 'zoneName'
+sub setZoneName($$$)
+{
+	my $self = shift;
+	my $id = shift;
+	my $zoneName = shift;
+
+	my $ret = undef;
+	if (!defined($self->{apiHive}))
+	{
+		$ret = "Unable to call HiveHome - (No API object)!";
+	}
+	else
+	{
+	        $self->_log(3, "setZoneName: ${id} ${zoneName}");
+		my $data = {
+			zoneName => $zoneName
+		};
+
+		my $resp = $self->{apiHive}->apiPOST('nodes/trv/'.$id, $data);
+	}
+	return $ret;
+}
+
+
+
 
 # mode can be one of 
 #   SCHEDULE, MANUAL, OFF

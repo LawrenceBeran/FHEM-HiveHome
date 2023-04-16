@@ -249,29 +249,34 @@ sub HiveHome_Device_Parse($$$)
 
 	if (lc($node->{id}) eq lc($id))
 	{
-        $shash->{deviceType}		= $node->{type};
-        $shash->{name}				= $node->{name};
-        $shash->{parent}			= $node->{parent};
+		$shash->{deviceType}		= $node->{type};
+		$shash->{name}				= $node->{name};
+		$shash->{parent}			= $node->{parent};
 
-        $shash->{manufacturer}		= $node->{internals}->{manufacturer};
-        $shash->{model}		        = $node->{internals}->{model};
-        $shash->{power}		        = $node->{internals}->{power};
-        $shash->{version}		    = $node->{internals}->{version};
+		$shash->{manufacturer}		= $node->{internals}->{manufacturer};
+		$shash->{model}		        = $node->{internals}->{model};
+		$shash->{power}		        = $node->{internals}->{power};
+		$shash->{version}		    = $node->{internals}->{version};
 
-        if (defined($node->{internals}->{zone}))
-        {
-            $shash->{zone}		    = $node->{internals}->{zone};
-        }
+		if (defined($node->{internals}->{zone}))
+		{
+			$shash->{zone}		    = $node->{internals}->{zone};
+		}
 
-        if (defined($node->{internals}->{control}))
-        {
-            $shash->{control}		= $node->{internals}->{control};
-        }
+		if (defined($node->{internals}->{zoneName}))
+		{
+			$shash->{zoneName} = $node->{internals}->{zoneName};
+		}
 
-        if (defined($node->{internals}->{childLock}))
-        {
-            $shash->{childLock}		= $node->{internals}->{childLock};
-        }
+		if (defined($node->{internals}->{control}))
+		{
+			$shash->{control}		= $node->{internals}->{control};
+		}
+
+		if (defined($node->{internals}->{childLock}))
+		{
+			$shash->{childLock}		= $node->{internals}->{childLock};
+		}
 
         if (defined($node->{internals}->{calibrationStatus}))
         {
@@ -315,14 +320,14 @@ sub HiveHome_Device_Parse($$$)
 		readingsBulkUpdate($shash, "state", $myState);
 		readingsEndUpdate($shash, 1);
 
-		HiveHome_Device_SetAlias($shash, $shash->{name});
+		HiveHome_Device_SetAlias($shash, $shash->{NAME});
 	}
 
 #	$shash->{STATE} = $myState;
 
 	Log(5, "HiveHome_Device_Parse: exit");
 
-	return $shash->{name};
+	return $shash->{NAME};
 }
 
 1;

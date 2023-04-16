@@ -17,14 +17,15 @@ sub _getHiveHomeInterface($)
 {
 	my ($hash) = @_;
 
-    if (!defined($hash->{HIVEHOME}{interface})) {
-       	Log(3, "_getHiveHomeInterface: Creating new HiveHomeInterface object!");
+	if (!defined($hash->{HIVEHOME}{interface})) 
+	{
+		Log(3, "_getHiveHomeInterface: Creating new HiveHomeInterface object!");
 
-        $hash->{HIVEHOME}{interface} = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
-                                            token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-                                            accessToken => $hash->{HIVEHOME}{accessToken}, deviceKey => $hash->{HIVEHOME}{deviceKey});
-    }
-    return $hash->{HIVEHOME}{interface};
+		$hash->{HIVEHOME}{interface} = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
+						token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
+						accessToken => $hash->{HIVEHOME}{accessToken}, deviceKey => $hash->{HIVEHOME}{deviceKey});
+	}
+	return $hash->{HIVEHOME}{interface};
 }
 
 sub HiveHome_Initialize($)
@@ -41,13 +42,14 @@ sub HiveHome_Initialize($)
 		"3:HiveHome_Product" => "^HiveHome_Product",		
 	);
 	$hash->{MatchList} = \%mc;
-    $hash->{WriteFn}  = "HiveHome_Write";    
+	$hash->{WriteFn}  = "HiveHome_Write";    
 
 	#Consumer
 	$hash->{DefFn}    = "HiveHome_Define";
 	$hash->{UndefFn}  = "HiveHome_Undefine";
 	
-    $hash->{helper}->{sendQueue} = [];
+	$hash->{HIVEHOME}{client} = undef;
+	$hash->{helper}->{sendQueue} = [];
 
 	Log(5, "HiveHome_Initialize: exit");
 	return undef;	
@@ -71,22 +73,22 @@ sub HiveHome_Define($$)
 
 	# Interface used by the hubs children to communicate with the physical hub
 	$hash->{InitNode} = \&HiveHome_UpdateNodes;
-    # Interface used by the hubs children to say a zone has been boosted
-    $hash->{ZoneBoosted} = \&HiveHome_ZoneBoosted;
-    # Interface used by the hubs children to say a zone has been boosted
-    $hash->{TRVScheduleModified} = \&HiveHome_TRVScheduleModified;
+	# Interface used by the hubs children to say a zone has been boosted
+	$hash->{ZoneBoosted} = \&HiveHome_ZoneBoosted;
+	# Interface used by the hubs children to say a zone has been boosted
+	$hash->{TRVScheduleModified} = \&HiveHome_TRVScheduleModified;
 
 	# Create a timer to get object details
 	InternalTimer(gettimeofday()+1, "HiveHome_GetUpdate", $hash, 0);
 
 
 	
-#    if ($init_done) 
-    {
-        $attr{$name}{room}  = 'HiveHome';
-        $attr{$name}{devStateIcon} = 'Connected:10px-kreis-gruen@green Disconnected:message_attention@orange .*:message_attention@red';
-        $attr{$name}{icon} = 'rc_HOME';
-    }
+#	 if ($init_done) 
+	{
+		$attr{$name}{room}  = 'HiveHome';
+		$attr{$name}{devStateIcon} = 'Connected:10px-kreis-gruen@green Disconnected:message_attention@orange .*:message_attention@red';
+		$attr{$name}{icon} = 'rc_HOME';
+	}
 
 	Log(5, "HiveHome_Define: exit");
 
@@ -102,10 +104,10 @@ sub HiveHome_Undefine($$)
 	RemoveInternalTimer($hash);
 
 	# Close the HIVE session 
-#    my $hiveHomeClient = _getHiveHomeInterface($hash);
-#    if (defined($hiveHomeClient)) {
-#    	$hiveHomeClient->logout();
-#    }
+#	 my $hiveHomeClient = _getHiveHomeInterface($hash);
+#	 if (defined($hiveHomeClient)) {
+#		 $hiveHomeClient->logout();
+#	}
 	$hash->{HIVEHOME}{SessionId} = undef;
 
 	Log(5, "HiveHome_Undefine: exit");
@@ -119,7 +121,7 @@ sub HiveHome_GetUpdate()
 
 	Log(5, "HiveHome_GetUpdate: enter");
 
-    HiveHome_UpdateNodes($hash, undef);
+	HiveHome_UpdateNodes($hash, undef);
 	
 	InternalTimer(gettimeofday()+$hash->{INTERVAL}, "HiveHome_GetUpdate", $hash, 0);
 
@@ -147,19 +149,19 @@ sub HiveHome_TRVScheduleModified($$)
 
 	Log(5, "HiveHome_TRVScheduleModified: enter");
     
-    Log(4, "HiveHome_TRVScheduleModified: from device: ".$fromDefine->{NAME});
+	Log(4, "HiveHome_TRVScheduleModified: from device: ".$fromDefine->{NAME});
 
-    # NOTE: This function is called from HiveHome_Product_Parse which in turn is called from HiveHome_UpdateNodes using Dispatch.
-    #       We just want to flag at this point that the weekProfile has been modified and then use the flag in
-    #       HiveHome_UpdateNodes after all child items have been processed to determine whether the parents (zone)
-    #       heating weekProfile needs to be updated.
+	# NOTE: This function is called from HiveHome_Product_Parse which in turn is called from HiveHome_UpdateNodes using Dispatch.
+	#       We just want to flag at this point that the weekProfile has been modified and then use the flag in
+	#       HiveHome_UpdateNodes after all child items have been processed to determine whether the parents (zone)
+	#       heating weekProfile needs to be updated.
    
-    my $zone = InternalVal($fromDefine->{NAME}, 'zone', undef);
-    if (defined($zone))
-    {
-        Log(4, "HiveHome_TRVScheduleModified: zone: ".$zone);
-        $hash->{helper}{$zone} = 1;
-    }
+	my $zone = InternalVal($fromDefine->{NAME}, 'zone', undef);
+	if (defined($zone))
+	{
+		Log(4, "HiveHome_TRVScheduleModified: zone: ".$zone);
+		$hash->{helper}{$zone} = 1;
+	}
 
 	Log(5, "HiveHome_TRVScheduleModified: exit");
 }
@@ -176,191 +178,215 @@ sub HiveHome_UpdateNodes()
 
 	my $presence = "ABSENT";
 
-    my $hiveHomeClient = _getHiveHomeInterface($hash);
-    if (!defined($hiveHomeClient) || !defined($hiveHomeClient->getToken()))
-    {
+	my $hiveHomeClient = _getHiveHomeInterface($hash);
+	if (!defined($hiveHomeClient) || !defined($hiveHomeClient->getToken()))
+	{
 		Log(1, "HiveHome_UpdateNodes: ".$hash->{username}." failed to logon to Hive");
 		$hash->{STATE} = 'Disconnected';
-    }
-    else
-    {
+	}
+	else
+	{
 		Log(4, "HiveHome_UpdateNodes: ".$hash->{username}." succesfully connected to Hive");
 
 		$hash->{STATE} = "Connected";
 
-        # Only parse the details which can create the sub-components once FHEM has finished 
-        # loading the config file
-        if (1 == $init_done)
-        {
-            # Process the devices
-            my @devices = $hiveHomeClient->getDevices();
-            foreach my $device (@devices) 
-            {
-                if ($device->{type} ne 'trv')
-                {
-                    my $deviceString = encode_json($device);
-                    Dispatch($hash, "HiveHome_Device,".$device->{type}.",".$device->{id}.",${deviceString}", undef);
-                }
-            }
+		# Only parse the details which can create the sub-components once FHEM has finished 
+		# loading the config file
+		if (1 == $init_done)
+		{
+			# Process the devices
+			my @devices = $hiveHomeClient->getDevices();
+			foreach my $device (@devices) 
+			{
+				if ($device->{type} ne 'trv')
+				{
+					my $deviceString = encode_json($device);
+					Dispatch($hash, "HiveHome_Device,".$device->{type}.",".$device->{id}.",${deviceString}", undef);
+				}
+			}
 
-            # Process the products
-            my @products = $hiveHomeClient->getProducts();
-            foreach my $product (@products)
-            {
-                if ($product->{type} ne 'trvcontrol')
-                {
-                    my $productString = encode_json($product);
-                    Dispatch($hash, "HiveHome_Product,".$product->{type}.",".$product->{id}.",${productString}", undef);
-                }
-            }
+			# Process the products
+			my @products = $hiveHomeClient->getProducts();
+			foreach my $product (@products)
+			{
+				if ($product->{type} ne 'trvcontrol')
+				{
+					my $productString = encode_json($product);
+					Dispatch($hash, "HiveHome_Product,".$product->{type}.",".$product->{id}.",${productString}", undef);
+				}
+			}
 
-            # Process the actions
-            my @actions = $hiveHomeClient->getActions();
-            foreach my $action (@actions)
-            {
-                my $actionString = encode_json($action);
-                Dispatch($hash, "HiveHome_Action,action,".$action->{id}.",${actionString}", undef);
+			# Process the actions
+			my @actions = $hiveHomeClient->getActions();
+			foreach my $action (@actions)
+			{
+				my $actionString = encode_json($action);
+				Dispatch($hash, "HiveHome_Action,action,".$action->{id}.",${actionString}", undef);
 
-                # TODO: purge unspecified actions or disabled actions
-            }
+				# TODO: purge unspecified actions or disabled actions
+			}
 
-            ######################################################################################################
-            # TODO: Work in progress... 
-            #       Matching TRV devices and product info together. Create a single item for TRVs under products.
-            #       Have merged info into a single hash. Need to be able to parse this to product for processing.
-            my $numbZoneTRVsCallingForHeat;
-            my $numbTRVsCallingForHeat;
+			######################################################################################################
+			# TODO: Work in progress... 
+			#       Matching TRV devices and product info together. Create a single item for TRVs under products.
+			#       Have merged info into a single hash. Need to be able to parse this to product for processing.
+			my $numbZoneTRVsCallingForHeat;
+			my $numbTRVsCallingForHeat;
 
-            foreach my $product (@products) {
-                if ($product->{type} eq 'trvcontrol') {
-                    # Find the matching device for this product
-                    my ($trvDevice) = first { 'trv' eq lc($_->{type}) && lc($_->{productId}) eq lc($product->{id}) } @devices;
+			foreach my $product (@products) 
+			{
+				if ($product->{type} eq 'trvcontrol') 
+				{
+					# Find the matching device for this product
+					my ($trvDevice) = first { 'trv' eq lc($_->{type}) && lc($_->{productId}) eq lc($product->{id}) } @devices;
 
-                    if (defined($trvDevice)) {
-                        # We have found a matching TRV
-                        my $trv = $product;
+					if (defined($trvDevice) && $trvDevice->{readings}->{online}) 
+					{
+						# We have found a matching TRV
+						my $trv = $product;
 
-                        $trv->{deviceType} = $trvDevice->{type};
+						# My config does not support zones and the trv devices have a zone name which is the same as their own name, so unique and not linked to the boilercontrol/thermostatUI.
+						# I will use the parent id for now as I only have a single zone in my config, the parent id is the id of the hub though!
+						my $zoneName = $trv->{parent};
 
-                        while ( my ($key, $value) = each(%{$trvDevice->{internals}})) {
-                            $trv->{internals}->{$key} = $value;
-                        }
+						$trv->{deviceType} = $trvDevice->{type};
 
-                        while ( my ($key, $value) = each(%{$trvDevice->{readings}})) {
-                            $trv->{readings}->{$key} = $value;
-                        }
+						while ( my ($key, $value) = each(%{$trvDevice->{internals}})) 
+						{
+							$trv->{internals}->{$key} = $value;
+						}
 
-                        my $productString = encode_json($trv);
-                        Dispatch($hash, "HiveHome_Product,".$product->{type}.",".$product->{id}.",${productString}", undef);
+						while ( my ($key, $value) = each(%{$trvDevice->{readings}})) 
+						{
+							$trv->{readings}->{$key} = $value;
+						}
 
-                        # Initialise the TRV count for the zone if they have not already been defined.
-                		$numbTRVsCallingForHeat->{$trv->{internals}->{zone}} = 0 if (!defined($numbTRVsCallingForHeat->{$trv->{internals}->{zone}}));
-                		$numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} = 0 if (!defined($numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}}));
+						my $productString = encode_json($trv);
+						Dispatch($hash, "HiveHome_Product,".$product->{type}.",".$product->{id}.",${productString}", undef);
 
-                        my $hashTRV = $modules{HiveHome_Product}{defptr}{$product->{id}};
+						# Initialise the TRV count for the zone if they have not already been defined.
+						$numbTRVsCallingForHeat->{$zoneName} = 0 if (!defined($numbTRVsCallingForHeat->{$zoneName}));
+						$numbZoneTRVsCallingForHeat->{$zoneName} = 0 if (!defined($numbZoneTRVsCallingForHeat->{$zoneName}));
 
-                        # Test to see if the TRV is not at the required temperature.
-                        if ($trv->{readings}->{temperature} <  hhc_AddOffestTemperature($trv->{readings}->{target}, $hashTRV->{NAME})) {                           
-                            $numbTRVsCallingForHeat->{$trv->{internals}->{zone}} = (!defined($numbTRVsCallingForHeat->{$trv->{internals}->{zone}})) ? 1 : $numbTRVsCallingForHeat->{$trv->{internals}->{zone}} + 1;
+						my $hashTRV = $modules{HiveHome_Product}{defptr}{$product->{id}};
 
-                            my $controlHeating = AttrVal($hashTRV->{NAME}, 'controlZoneHeating', 0);
+						# Test to see if the TRV is not at the required temperature.
+						if ($trv->{readings}->{temperature} <  hhc_AddOffestTemperature($trv->{readings}->{target}, $hashTRV->{NAME})) 
+						{
+							$numbTRVsCallingForHeat->{$zoneName} = (!defined($numbTRVsCallingForHeat->{$zoneName})) ? 1 : $numbTRVsCallingForHeat->{$zoneName} + 1;
 
-                            # If the TRV is configured to control the heating and it's 'calibrated'
-                            # Do not let the TRV call for heat if it is calibrating.
-                            if (0 != $controlHeating && uc($hashTRV->{calibrationStatus}) ne 'CALIBRATING') {
-                                Log(3, "HiveHome_UpdateNodes: TRV ".$trv->{name}." temperature is below its target temperature");
-                                # Flag this zone as requiring heating and count the number of TRVs that are calling for heat.
-                                $numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} = (!defined($numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}})) ? 1 : $numbZoneTRVsCallingForHeat->{$trv->{internals}->{zone}} + 1;
-                            }
-                        }
-                    }
-                }
-            }
+							my $controlHeating = AttrVal($hashTRV->{NAME}, 'controlZoneHeating', 0);
 
-            # Loop through zones
-            foreach my $zone (keys %$numbZoneTRVsCallingForHeat) {
-                Log(3, "HiveHome_UpdateNodes: Zone ".$zone." TRV(s) are ".(0 == $numbZoneTRVsCallingForHeat->{$zone} ? "not " : "")."calling for heat");
+							# If the TRV is configured to control the heating and it's 'calibrated'
+							# Do not let the TRV call for heat if it is calibrating.
+							if (0 != $controlHeating && uc($hashTRV->{calibrationStatus}) ne 'CALIBRATING') 
+							{
+								Log(3, "HiveHome_UpdateNodes: TRV ".$trv->{name}." temperature is below its target temperature");
+								# Flag this zone as requiring heating and count the number of TRVs that are calling for heat.
+								$numbZoneTRVsCallingForHeat->{$zoneName} = (!defined($numbZoneTRVsCallingForHeat->{$zoneName})) ? 1 : $numbZoneTRVsCallingForHeat->{$zoneName} + 1;
+							}
+						}
+					}
+				}
+			}
 
-                Log(3, "HiveHome_UpdateNodes: Zone ".$zone." ".$numbTRVsCallingForHeat->{$zone}." TRV(s) are not at target and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat");
+			# Loop through zones
+			foreach my $zone (keys %$numbZoneTRVsCallingForHeat) 
+			{
+				Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' TRV(s) are ".(0 == $numbZoneTRVsCallingForHeat->{$zone} ? "not " : "")."calling for heat");
 
+				Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' ".$numbTRVsCallingForHeat->{$zone}." TRV(s) are not at target and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat");
 
-                # Get the heating product for the zone
-                #   where lc(product->{productType}) == 'heating' && product->{zone} = device->{id}
+				# Get the heating product for the zone
+				#   where lc(product->{productType}) == 'heating' && product->{zone} = device->{id}
 
-                # Find the matching device for this product
-                my ($heatingProduct) = first { 'heating' eq lc($_->{type}) && lc($_->{internals}->{zone}) eq lc($zone) } @products;
+				# Find the matching device for this product. trv devices have a ZoneName, not an Id. I have not seen how I can set the ZoneName myself
+				# so I am not able to set the heating by zone!
+				# I will get the only 'heating' type device in my config and set that.
+#				my ($heatingProduct) = first { 'heating' eq lc($_->{type}) && lc($_->{internals}->{zone}) eq lc($zone) } @products;
+				my ($heatingProduct) = first { 'heating' eq lc($_->{type}) } @products;
 
-                if (defined($heatingProduct)) {
-                    my $hashHeating = $modules{HiveHome_Product}{defptr}{$heatingProduct->{id}};
-                    my $controlHeating = AttrVal($hashHeating->{NAME}, 'controlZoneHeating', 0);
-                    if (0 != $controlHeating) {
-                        Log(3, "HiveHome_UpdateNodes: Heating zone is ".(0 == $heatingProduct->{readings}->{working} ? "not " : "")."calling for heat. Current temp is ".$heatingProduct->{readings}->{temperature}." target temp is ".$heatingProduct->{readings}->{target});
+				if (defined($heatingProduct)) 
+				{
+					my $hashHeating = $modules{HiveHome_Product}{defptr}{$heatingProduct->{id}};
+					my $controlHeating = AttrVal($hashHeating->{NAME}, 'controlZoneHeating', 0);
 
-                        my $numbTRVsRequired = AttrVal($hashHeating->{NAME}, 'controlZoneHeatingMinNumberOfTRVs', 3);
+					if (0 != $controlHeating) 
+					{
+						Log(3, "HiveHome_UpdateNodes: Heating zone is ".(0 == $heatingProduct->{readings}->{working} ? "not " : "")."calling for heat. Current temp is ".$heatingProduct->{readings}->{temperature}." target temp is ".$heatingProduct->{readings}->{target});
 
-                        # If heating is not required from the zone TRVs but the heating is on...
-                        if ($numbTRVsRequired > $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working}) {
-                            # The TRVs do not require heat but the heating is on.
-                            Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' TRV(s) not calling for heat but zone heating is on");
+						my $numbTRVsRequired = AttrVal($hashHeating->{NAME}, 'controlZoneHeatingMinNumberOfTRVs', 3);
 
-                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule' && $heatingProduct->{internals}->{scheduleOverride} == 1) {
-                                Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to schedule");
-                                my $ret = $hiveHomeClient->_setHeatingMode($heatingProduct->{type}, $heatingProduct->{id}, 'schedule');
-                            } elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost') {
-                                # TODO: Currently, if heating is set to BOOST, all TRVs are set to the same BOOST as the heating zone.
-                                #       This is not the desired result as this will cause a feedback loop which will eventually adjust the entire heating to 5 degrees for the entire zone!
-                                Log(3, "HiveHome_UpdateNodes: Adjusting boost for zone '".$zone."' with a temperature of ".floor($heatingProduct->{readings}->{temperature}));
-#                               my $ret = $hiveHomeClient->setHeatingBoostMode($heatingProduct->{id}, floor($heatingProduct->{readings}->{temperature}, $heatingProduct->{internals}->{boost}));
-                            } elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual') {
-                                Log(3, "HiveHome_UpdateNodes: Adjusting manual for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
-                                my $ret = $hiveHomeClient->setHeatingMode($heatingProduct->{id}, 'MANUAL', floor($heatingProduct->{readings}->{temperature} + 1));
-                            }
-                        }
-                        # If TRVs are not at the required heat
-                        elsif ($numbTRVsRequired <= $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working}) {
-                            # The TRVs require heat but the zone heating os off.
-                            Log(3, "HiveHome_UpdateNodes: Heating zone '".$zone."' is not on and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat, zone requires ${numbTRVsRequired} TRV(s) to switch on heating");
+						# If heating is not required from the zone TRVs but the heating is on...
+						if ($numbTRVsRequired > $numbZoneTRVsCallingForHeat->{$zone} && 0 != $heatingProduct->{readings}->{working}) 
+						{
+							# The TRVs do not require heat but the heating is on.
+							Log(3, "HiveHome_UpdateNodes: Zone '".$zone."' TRV(s) not calling for heat but zone heating is on");
 
-                            if (lc($heatingProduct->{readings}->{mode}) eq 'schedule') {
-                                Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to scheduleOverride with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
-                                my $ret = $hiveHomeClient->_scheduleOverride($heatingProduct->{type}, $heatingProduct->{id}, ceil($heatingProduct->{readings}->{temperature} + 1));
-                            }
-                            elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost')
-                            {
-                                # TODO: Currently, if heating is set to BOOST, all TRVs are set to the same BOOST as the heating zone.
-                                #       This is not the desired result as this will cause a feedback loop which will eventually adjust the entire heating to 32 degrees for the entire zone!
-                                Log(3, "HiveHome_UpdateNodes: Adjusting boost for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
-#                               my $ret = $hiveHomeClient->setHeatingBoostMode($heatingProduct->{id}, ceil($heatingProduct->{readings}->{temperature} + 1, $heatingProduct->{internals}->{boost}));
-                            }
-                            elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual')
-                            {
-                                Log(3, "HiveHome_UpdateNodes: Adjusting manual heating for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
-                                my $ret = $hiveHomeClient->setHeatingMode($heatingProduct->{id}, 'MANUAL', ceil($heatingProduct->{readings}->{temperature} + 1));
-                            }
-                        }
-                        elsif ($numbTRVsRequired > $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working})
-                        {
-                            Log(3, "HiveHome_UpdateNodes: Heating zone '".$zone."' is not on and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat, zone requires ${numbTRVsRequired} TRV(s) to switch on heating");
-                        }
-                    }
-                }
-                else
-                {
-                    Log(2, "HiveHome_UpdateNodes: Could not find heating product for zone ".$zone);
-                }
-            }
+							if (lc($heatingProduct->{readings}->{mode}) eq 'schedule' && $heatingProduct->{internals}->{scheduleOverride} == 1) 
+							{
+								Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to schedule");
+								my $ret = $hiveHomeClient->_setHeatingMode($heatingProduct->{type}, $heatingProduct->{id}, 'schedule');
+							} 
+							elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost') 
+							{
+								# TODO: Currently, if heating is set to BOOST, all TRVs are set to the same BOOST as the heating zone.
+								#       This is not the desired result as this will cause a feedback loop which will eventually adjust the entire heating to 5 degrees for the entire zone!
+								Log(3, "HiveHome_UpdateNodes: Adjusting boost for zone '".$zone."' with a temperature of ".floor($heatingProduct->{readings}->{temperature}));
+#								 my $ret = $hiveHomeClient->setHeatingBoostMode($heatingProduct->{id}, floor($heatingProduct->{readings}->{temperature}, $heatingProduct->{internals}->{boost}));
+							} 
+							elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual') 
+							{
+								Log(3, "HiveHome_UpdateNodes: Adjusting manual for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
+								my $ret = $hiveHomeClient->setHeatingMode($heatingProduct->{id}, 'MANUAL', floor($heatingProduct->{readings}->{temperature} + 1));
+							}
+						}
+						# If TRVs are not at the required heat
+						elsif ($numbTRVsRequired <= $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working}) 
+						{
+							# The TRVs require heat but the zone heating os off.
+							Log(3, "HiveHome_UpdateNodes: Heating zone '".$zone."' is not on and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat, zone requires ${numbTRVsRequired} TRV(s) to switch on heating");
 
-            HiveHome_SetZoneScheduleByZoneTRVSchedules($hash);
+							if (lc($heatingProduct->{readings}->{mode}) eq 'schedule') 
+							{
+								Log(3, "HiveHome_UpdateNodes: Setting heating for zone '".$zone."' to scheduleOverride with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
+								my $ret = $hiveHomeClient->_scheduleOverride($heatingProduct->{type}, $heatingProduct->{id}, ceil($heatingProduct->{readings}->{temperature} + 1));
+							}
+							elsif (lc($heatingProduct->{readings}->{mode}) eq 'boost')
+							{
+								# TODO: Currently, if heating is set to BOOST, all TRVs are set to the same BOOST as the heating zone.
+								#       This is not the desired result as this will cause a feedback loop which will eventually adjust the entire heating to 32 degrees for the entire zone!
+								Log(3, "HiveHome_UpdateNodes: Adjusting boost for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
+#								 my $ret = $hiveHomeClient->setHeatingBoostMode($heatingProduct->{id}, ceil($heatingProduct->{readings}->{temperature} + 1, $heatingProduct->{internals}->{boost}));
+							}
+							elsif (lc($heatingProduct->{readings}->{mode}) eq 'manual')
+							{
+								Log(3, "HiveHome_UpdateNodes: Adjusting manual heating for zone '".$zone."' with a temperature of ".ceil($heatingProduct->{readings}->{temperature} + 1));
+								my $ret = $hiveHomeClient->setHeatingMode($heatingProduct->{id}, 'MANUAL', ceil($heatingProduct->{readings}->{temperature} + 1));
+							}
+						}
+						elsif ($numbTRVsRequired > $numbZoneTRVsCallingForHeat->{$zone} && 0 == $heatingProduct->{readings}->{working})
+						{
+							Log(3, "HiveHome_UpdateNodes: Heating zone '".$zone."' is not on and ".$numbZoneTRVsCallingForHeat->{$zone}." TRV(s) are calling for heat, zone requires ${numbTRVsRequired} TRV(s) to switch on heating");
+						}
+					}
+				}
+				else
+				{
+					Log(2, "HiveHome_UpdateNodes: Could not find heating product for zone '".$zone."'");
+				}
+			}
 
-        }
+			HiveHome_SetZoneScheduleByZoneTRVSchedules($hash);
+		}
 
-        ### Get the latest used token
-        my $token = $hiveHomeClient->getToken();
-        $hash->{HIVEHOME}{sessionToken} = $token->{token};
-        $hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
-        $hash->{HIVEHOME}{accessToken} = $token->{accessToken};
-        $hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
-    }
+		### Get the latest used token
+		my $token = $hiveHomeClient->getToken();
+		$hash->{HIVEHOME}{sessionToken} = $token->{token};
+		$hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
+		$hash->{HIVEHOME}{accessToken} = $token->{accessToken};
+		$hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
+	}
 
 	Log(5, "HiveHome_UpdateNodes: exit");
 }
@@ -368,20 +394,19 @@ sub HiveHome_UpdateNodes()
 sub _getHeatingProducts($$)
 {
 	my ($productType, $zone) = @_;
-
 	my @products;
 
-    foreach my $device ( sort keys %{$modules{HiveHome_Product}{defptr}} )
-    {
-        my $hash=$modules{HiveHome_Product}{defptr}{$device};
+	foreach my $device ( sort keys %{$modules{HiveHome_Product}{defptr}} )
+	{
+		my $hash=$modules{HiveHome_Product}{defptr}{$device};
        
-        next if (!defined($hash->{IODev}) || !defined($hash->{NAME}) || !defined($hash->{productType}));
-        next if (lc($hash->{productType}) ne lc($productType));
-        # If the zone parameter is defined, then reject all devices that are in a different zone.
-        next if (defined($zone) && lc($hash->{zone}) ne lc($zone));
+		next if (!defined($hash->{IODev}) || !defined($hash->{NAME}) || !defined($hash->{productType}));
+		next if (lc($hash->{productType}) ne lc($productType));
+		# If the zone parameter is defined, then reject all devices that are in a different zone.
+		next if (defined($zone) && defined($hash->{zone}) && lc($hash->{zone}) ne lc($zone));
 
-   		push (@products, $hash->{NAME});
-    }
+		push (@products, $hash->{NAME});
+	}
 
 	return @products;        
 }
@@ -937,13 +962,27 @@ sub HiveHome_Write_Product($$$$@)
                 }
 
                 if (defined($different) || $forceUpdateSchedule eq 'true') {
-                    Log(4, "HiveHome_Write_Product(${cmd}): Complete WeekProfile - ".$weekProfileCmdString);
+                    Log(3, "HiveHome_Write_Product(${cmd}): Complete WeekProfile - ".$weekProfileCmdString);
                     my $resp = $hiveHomeClient->_setSchedule(lc($shash->{productType}), $shash->{id}, $weekProfileCmdString);
                 } else {
                     Log(4, "HiveHome_Write_Product(${cmd}): WeekProfile not changed from current - ".$weekProfileCmdString);
                 }
             }
-        } elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'holidaymode')) {
+	} 
+	elsif ((lc($shash->{productType}) eq 'trvcontrol') and ($cmd eq 'zonename'))
+	{
+		# Single param...
+		if ($args[0])
+		{
+			Log(3, "HiveHome_Write_Product(${cmd}): setZoneName - ".$args[0]);
+			my $resp = $hiveHomeClient->setZoneName($shash->{deviceId}, $args[0]);
+			Log(3, "HiveHome_Write_Product(${cmd}): ${resp}");
+		}
+		else
+		{
+			Log(3, "HiveHome_Write_Product(${cmd}): Missing parameter");
+		}
+	} elsif ((lc($shash->{productType}) eq 'heating') and ($cmd eq 'holidaymode')) {
             # Three params
             #   args[0] = start date/time
             #   args[1] = end date/time
@@ -1061,7 +1100,7 @@ sub HiveHome_Write_Product($$$$@)
                 my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
-                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childLock:0,1 ";
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childLock:0,1 zoneName ";
             }
         } elsif (lc($shash->{productType}) eq 'hotwater') {
             # Can have arguments of:
@@ -1227,7 +1266,7 @@ sub _verifyWriteProductCommandArgs($$$$)
                 my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
                 my $desOptions = "off,schedule,advanceSchedule,boost,${templist}";
 
-                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childlock:0,1 ";
+                $ret = "unknown argument ${cmd} choose one of schedule:noArg off:noArg manual:${templist} boost weekprofile advanceSchedule:noArg scheduleOverride:${templist} desiredTemperature:${desOptions} name calibrate:start,stop valveposition:horizontal,vertical childlock:0,1 zoneName ";
             }
         }
         elsif (lc($shash->{productType}) eq 'hotwater') {

@@ -414,6 +414,7 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'frostProtection',	$node->{internals}->{frostProtection});
 			SetInternal($shash, 'scheduleOverride', $node->{internals}->{scheduleOverride});
 			SetInternal($shash, 'zone', 			$node->{internals}->{zone});
+			SetInternal($shash, 'zoneName', 		$node->{internals}->{zoneName});
 			SetInternal($shash, 'maxEvents', 		$node->{internals}->{maxEvents});
 			SetInternal($shash, 'boost', 			$node->{internals}->{boost});
 			SetInternal($shash, 'previousMode', 	$node->{internals}->{previousMode});
@@ -561,7 +562,7 @@ sub HiveHome_Product_Notify($$)
 #		Log(4, "HiveHome_Product_Notify(${ownFriendlyName}): - ${devFriendlyName}");
 
 		# If the TRV is in the same zone as the heating product
-		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
+#		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
 		{
 			# If a zone Heating is being boosted then all the trvs in the same zone must also be boosted.
 			# When the heating reverts back to its original heating mode, the trvs must also revert back to their previous mode.
