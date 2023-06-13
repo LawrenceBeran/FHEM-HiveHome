@@ -21,9 +21,35 @@ sub _getHiveHomeInterface($)
 	{
 		Log(3, "_getHiveHomeInterface: Creating new HiveHomeInterface object!");
 
+        if (!$hash->{HIVEHOME}{deviceKey})
+        {
+            my $credentials_filename = './log/hive_credentials.json';
+
+            ### Load credentials from file
+            my $credentialsString = do {
+                open(my $fhIn, "<", $credentials_filename);
+                local $/;
+                <$fhIn>
+            };
+
+            if (defined($credentialsString))
+            {
+                my $credentials = decode_json($credentialsString);
+#                $hash->{username} = $credentials->{username};
+#                $hash->{password} = $credentials->{password};
+
+                if (defined($credentials->{deviceGroupKey}))
+                {
+                    $hash->{HIVEHOME}{deviceGroupKey} = $credentials->{deviceGroupKey};
+                    $hash->{HIVEHOME}{deviceKey}      = $credentials->{deviceKey};
+                    $hash->{HIVEHOME}{devicePassword} = $credentials->{devicePassword};
+                }
+            }            
+        }
+
 		$hash->{HIVEHOME}{interface} = HiveHomeInterface->new(userName => $hash->{username}, password => $hash->{password}, 
-						token => $hash->{HIVEHOME}{sessionToken}, refreshToken => $hash->{HIVEHOME}{refreshToken}, 
-						accessToken => $hash->{HIVEHOME}{accessToken}, deviceKey => $hash->{HIVEHOME}{deviceKey});
+						deviceGroupKey => $hash->{HIVEHOME}{deviceGroupKey}, deviceKey => $hash->{HIVEHOME}{deviceKey}, 
+                        devicePassword => $hash->{HIVEHOME}{devicePassword} );
 	}
 	return $hash->{HIVEHOME}{interface};
 }
@@ -381,11 +407,11 @@ sub HiveHome_UpdateNodes()
 		}
 
 		### Get the latest used token
-		my $token = $hiveHomeClient->getToken();
-		$hash->{HIVEHOME}{sessionToken} = $token->{token};
-		$hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
-		$hash->{HIVEHOME}{accessToken} = $token->{accessToken};
-		$hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
+#		my $token = $hiveHomeClient->getToken();
+#		$hash->{HIVEHOME}{sessionToken} = $token->{token};
+#		$hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
+#		$hash->{HIVEHOME}{accessToken} = $token->{accessToken};
+#		$hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
 	}
 
 	Log(5, "HiveHome_UpdateNodes: exit");
@@ -1419,11 +1445,11 @@ sub HiveHome_ctrl_Write($$$@)
 
 
         ### Get the latest used token
-        my $token = $hiveHomeClient->getToken();
-        $hash->{HIVEHOME}{sessionToken} = $token->{token};
-        $hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
-        $hash->{HIVEHOME}{accessToken} = $token->{accessToken};
-        $hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
+        # my $token = $hiveHomeClient->getToken();
+        # $hash->{HIVEHOME}{sessionToken} = $token->{token};
+        # $hash->{HIVEHOME}{refreshToken} = $token->{refreshToken};
+        # $hash->{HIVEHOME}{accessToken} = $token->{accessToken};
+        # $hash->{HIVEHOME}{deviceKey} = $token->{deviceKey};
 
         if (!defined($ret))
         {

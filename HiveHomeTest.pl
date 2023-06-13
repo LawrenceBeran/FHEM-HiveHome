@@ -11,8 +11,14 @@ use List::Util qw(first);
 
 
 my $credentials_filename = 'credentials.json';
+
 my $username = 'XXXX';
 my $password = 'XXXX';
+
+my $deviceGroupKey  = undef;
+my $deviceKey       = undef;
+my $devicePassword  = undef;
+
 
 ### Load credentials from file
 my $credentialsString = do {
@@ -26,34 +32,19 @@ if (defined($credentialsString))
     my $credentials = decode_json($credentialsString);
     $username = $credentials->{username};
     $password = $credentials->{password};
-}
 
-my $token_filename = 'HiveHome-token.json';
-my $token = undef;
-my $refreshToken = undef;
-my $accessToken = undef;
-my $deviceKey = undef;
-
-### Load the previous token from file
-my $tokenString = do {
-    open(my $fhIn, "<", $token_filename);
-    local $/;
-    <$fhIn>
-};
-
-if (defined($tokenString))
-{
-    my $tokens = decode_json($tokenString);
-    $token = $tokens->{token};
-    $refreshToken = $tokens->{refreshToken};
-    $accessToken = $tokens->{accessToken};
-    $deviceKey = $tokens->{deviceKey};
+    if (defined($credentials->{deviceGroupKey}))
+    {
+        $deviceGroupKey = $credentials->{deviceGroupKey};
+        $deviceKey      = $credentials->{deviceKey};
+        $devicePassword = $credentials->{devicePassword};
+    }    
 }
 
 ### Connect to the HiveHomeAPI
-my $hiveHomeClient = HiveHomeInterface->new(userName => $username, password => $password, token => $token,
-                                        refreshToken => $refreshToken, accessToken => $accessToken, deviceKey => $deviceKey);
+my $hiveHomeClient = HiveHomeInterface->new(userName => $username, password => $password, deviceGroupKey => $deviceGroupKey, deviceKey => $deviceKey, devicePassword => $devicePassword);
 
+my $loginResults = $hiveHomeClient->loginDevice();
 
 
 my $tests = {
@@ -330,11 +321,11 @@ if (defined($tests->{trvSchedule}))
 ################################################################################################################
 
 ### Get the latest used token
-$token = $hiveHomeClient->getToken();
+#$token = $hiveHomeClient->getToken();
 ### Save the previous token to file
-open(my $fhOut, ">", $token_filename);
-print($fhOut encode_json($token));
-close($fhOut);  
+#open(my $fhOut, ">", $token_filename);
+#print($fhOut encode_json($token));
+#close($fhOut);  
 
 
 

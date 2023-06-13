@@ -370,7 +370,7 @@ sub HiveHome_Product_Parse($$$)
 		# Test to see if the product is online.... If online only some of the read values are returned.
 		if (!$node->{readings}->{online}) {
 			readingsBeginUpdate($shash);
-			readingsBulkUpdateIfChanged($shash, "online", $node->{readings}->{online} ? 'Online' : 'Offline');
+			readingsBulkUpdateIfChanged($shash, "online", 'Offline');
 			readingsEndUpdate($shash, 1);
 		} else {
 			$shash->{pmz}				= $node->{internals}->{pmz};
@@ -517,8 +517,11 @@ sub HiveHome_Product_Parse($$$)
 			}
 		}
 		HiveHome_Product_SetAlias($shash, $shash->{NAME});
+	} else {
+		readingsBeginUpdate($shash);
+		readingsBulkUpdateIfChanged($shash, "online", 'Offline');
+		readingsEndUpdate($shash, 1);
 	}
-
 	$shash->{STATE} = $myState;
 
 	Log(5, "HiveHome_Product_Parse(".$shash->{NAME}."): exit");

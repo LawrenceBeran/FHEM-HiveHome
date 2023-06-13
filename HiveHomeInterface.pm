@@ -69,29 +69,28 @@ sub new        # constructor, this method makes an object that belongs to class 
 
     # This could be abstracted out into a method call if you 
     # expect to need to override this check.
-    for my $required (qw{ userName password  }) {
+    for my $required (qw{ userName password deviceGroupKey deviceKey devicePassword }) {
         croak "Required parameter '$required' not passed to '$class' constructor"
             unless exists $params{$required};  
     }
 
+    # Construct the Hive API object using the provided credentials.
     $self->{apiHive} = HiveHomeAPI->new(%params);
 
     return $self;        # a constructor always returns an blessed() object
 }
 
-sub getToken($)
+sub loginDevice($)
 {
     my $self = shift;
 
-    if (!defined($self->{apiHive}))
-    {
-        $self->_log(1, "Unable to call HiveHome - (No API object)!");
-    }
-    else
-    {
-        return $self->{apiHive}->getToken();
-    }
-    return undef;
+    return $self->{apiHive}->loginDevice();
+}
+
+sub getToken($)
+{
+    my $self = shift;
+    return $self->{apiHive}->getToken();
 }
 
 sub getDevices($)

@@ -48,6 +48,8 @@ if (defined($deviceGroupKey)) {
     my $loginResult = $awsAuth->loginDevice();
 
 
+    my $refreshTokens = $awsAuth->refreshToken();
+
 } else {
 
 

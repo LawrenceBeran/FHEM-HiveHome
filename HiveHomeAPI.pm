@@ -76,7 +76,7 @@ sub new        # constructor, this method makes an object that belongs to class 
 
     # This could be abstracted out into a method call if you 
     # expect to need to override this check.
-    for my $required (qw{ userName password  }) {
+    for my $required (qw{ userName password deviceGroupKey deviceKey devicePassword }) {
         croak "Required parameter '$required' not passed to '$class' constructor"
             unless exists $params{$required};  
     }
@@ -131,43 +131,41 @@ sub password($$)
     return $self->{password};
 }
 
-sub token($$) 
+sub deviceGroupKey($$) 
 {
     my ($self, $value) = @_;
     if (@_ == 2) 
     {
-        $self->{token} = $value;
+        $self->{deviceGroupKey} = $value;
     }
-    return $self->{token};
+    return $self->{deviceGroupKey};
 }
 
-sub refreshToken($$)
+sub deviceKey($$)
 {
-    my ($self, $value) = @_;
-    if (@_ == 2) 
-    {
-        $self->{refreshToken} = $value;
-    }
-    return $self->{refreshToken};
-}
-
-sub accessToken($$) 
-{
-    my ($self, $value) = @_;
-    if (@_ == 2) 
-    {
-        $self->{accessToken} = $value;
-    }
-    return $self->{accessToken};
-}
-
-sub deviceKey($$) {
     my ($self, $value) = @_;
     if (@_ == 2) 
     {
         $self->{deviceKey} = $value;
     }
     return $self->{deviceKey};
+}
+
+sub devicePassword($$) 
+{
+    my ($self, $value) = @_;
+    if (@_ == 2) 
+    {
+        $self->{devicePassword} = $value;
+    }
+    return $self->{devicePassword};
+}
+
+sub loginDevice($)
+{
+    my $self = shift;
+
+
 }
 
 sub getToken($) 
@@ -387,7 +385,7 @@ sub _login($)
         $self->_log(1, "Login: Failed to get logon details!");
     } else {
         my $awsAuth = AWSCognitoIdp->new(userName => $self->{userName}, password => $self->{password}, 
-                    region => $loginDetails->{region}, poolId => $loginDetails->{poolId}, clientId => $loginDetails->{clientId});
+                    deviceGroupKey => $self->{deviceGroupKey}, deviceKey => $self->{deviceKey}, devicePassword => $self->{devicePassword});
 
         if ($self->{refreshToken}) {
             # We have a refresh token, use it rather than log on again!
@@ -402,15 +400,14 @@ sub _login($)
 
         } else {
             # Extract the session ID from the response...
-            my $authResult = $awsAuth->loginSRP();
-            if ($authResult) 
+            my $loginResults = $awsAuth->loginDevice();
+            if ($loginResults) 
             {
+                my $authResult = $loginResults->{AuthenticationResult};
                 $self->{token}          = $authResult->{IdToken};
                 $self->{refreshToken}   = $authResult->{RefreshToken};
                 $self->{accessToken}    = $authResult->{AccessToken};
-                $self->{deviceKey}      = $authResult->{NewDeviceMetadata}->{DeviceKey};
-
-                # TODO: We should save the RefreshToken and DeviceKey in a file in case of a server restart.
+#                $self->{deviceKey}      = $authResult->{NewDeviceMetadata}->{DeviceKey};
             } 
             else 
             {
