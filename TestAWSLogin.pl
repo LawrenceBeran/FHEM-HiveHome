@@ -87,6 +87,7 @@ if (defined($deviceGroupKey)) {
 ##            my $awsAuth2 = AWSCognitoIdp->new(userName => $username, password => $password, deviceGroupKey => $deviceGroupKey, deviceKey => $deviceKey, devicePassword => $devicePassword);
 ##            my $loginResult2 = $awsAuth->loginDevice();
 
+#            my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
 
 #            my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
 
