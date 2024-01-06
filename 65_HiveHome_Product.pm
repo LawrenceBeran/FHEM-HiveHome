@@ -522,6 +522,7 @@ sub HiveHome_Product_Parse($$$)
 		readingsBulkUpdateIfChanged($shash, "online", 'Offline');
 		readingsEndUpdate($shash, 1);
 	}
+
 	$shash->{STATE} = $myState;
 
 	Log(5, "HiveHome_Product_Parse(".$shash->{NAME}."): exit");
