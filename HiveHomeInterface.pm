@@ -9,6 +9,7 @@ use Data::Dumper;
 use Carp qw(croak);
 use Math::Round;
 use List::Util qw(first);
+use HiveHomeCommon;
 
 # Note: The API does not currently care whether the 'heating' or 'hotwater' path is specified as part
 # of the /nodes/<heating or hotwater>/<id> endpoint for either heating or hotwater products.
@@ -68,29 +69,28 @@ sub new        # constructor, this method makes an object that belongs to class 
 
     # This could be abstracted out into a method call if you 
     # expect to need to override this check.
-    for my $required (qw{ userName password  }) {
+    for my $required (qw{ userName password deviceGroupKey deviceKey devicePassword }) {
         croak "Required parameter '$required' not passed to '$class' constructor"
             unless exists $params{$required};  
     }
 
+    # Construct the Hive API object using the provided credentials.
     $self->{apiHive} = HiveHomeAPI->new(%params);
 
     return $self;        # a constructor always returns an blessed() object
 }
 
-sub getToken($)
+sub loginDevice($)
 {
     my $self = shift;
 
-    if (!defined($self->{apiHive}))
-    {
-        $self->_log(1, "Unable to call HiveHome - (No API object)!");
-    }
-    else
-    {
-        return $self->{apiHive}->getToken();
-    }
-    return undef;
+    return $self->{apiHive}->loginDevice();
+}
+
+sub getToken($)
+{
+    my $self = shift;
+    return $self->{apiHive}->getToken();
 }
 
 sub getDevices($)
@@ -151,6 +151,11 @@ sub getDevices($)
             {
                 $dev->{internals}->{zone} = $deviceAPI->{state}->{zone};
             }
+
+			if (defined($deviceAPI->{state}->{zoneName}))
+			{
+				$dev->{internals}->{zoneName} = $deviceAPI->{state}->{zoneName};
+			}
 
             if (lc($deviceAPI->{type}) eq 'trv')
             {
@@ -547,6 +552,33 @@ sub cancelTRVControlBoostMode($$)
 
     return $self->_cancelHeatingBoostMode($trvControlPath, $id);
 }
+
+# Note: 'boilermodule' and 'thermostatui' types also support 'zoneName'
+sub setZoneName($$$)
+{
+	my $self = shift;
+	my $id = shift;
+	my $zoneName = shift;
+
+	my $ret = undef;
+	if (!defined($self->{apiHive}))
+	{
+		$ret = "Unable to call HiveHome - (No API object)!";
+	}
+	else
+	{
+	        $self->_log(3, "setZoneName: ${id} ${zoneName}");
+		my $data = {
+			zoneName => $zoneName
+		};
+
+		my $resp = $self->{apiHive}->apiPOST('nodes/trv/'.$id, $data);
+	}
+	return $ret;
+}
+
+
+
 
 # mode can be one of 
 #   SCHEDULE, MANUAL, OFF
@@ -975,7 +1007,7 @@ sub _getValidBoostDuration($$)
     return $ret;
 }
 
-sub _trim($) 
+sub hhc_trim($) 
 { 
     my $s = shift; 
     $s =~ s/^\s+|\s+$//g; 
@@ -1017,7 +1049,7 @@ sub _convertScheduleStringToJSON($$$)
 		my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
 
         # Split the string into its component (day) parts 
-        my @array = split(/(monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)/i, _trim($scheduleString));
+        my @array = split(/(monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)/i, hhc_trim($scheduleString));
         # Remove the first element, which is blank
         shift(@array);
 
@@ -1038,12 +1070,12 @@ sub _convertScheduleStringToJSON($$$)
             else 
             {
                 $self->_log(4,"_convertScheduleStringToJSON: Day: ".$array[$day]);
-                $self->_log(4,"_convertScheduleStringToJSON: Sch: "._trim($array[$day+1]));
+                $self->_log(4,"_convertScheduleStringToJSON: Sch: ".hhc_trim($array[$day+1]));
 
                 my (@value, @time);
 
                 my $i;
-                push @{ $i++ % 2 ? \@time : \@value }, $_ for split(/,/, _trim($array[$day+1]));
+                push @{ $i++ % 2 ? \@time : \@value }, $_ for split(/,/, hhc_trim($array[$day+1]));
                 # TODO: Verify elements, 
                 #       there should be one more temp than time or
                 #                the first time must be 00:00 or 0:00
@@ -1102,10 +1134,10 @@ sub _convertScheduleStringToJSON($$$)
                     my $prev_time = 0;
                     for my $i ( 0 .. $#value)
                     {
-                        my $time_ = $self->_getTimeInMinutes(_trim($time[$i]));
+                        my $time_ = $self->_getTimeInMinutes(hhc_trim($time[$i]));
                         my $value_ = ($valueName eq $targetValue) 
-                            ? $self->_getValidTemp(_trim($value[$i]))
-                            : $self->_getValidStatus(_trim($value[$i]));
+                            ? $self->_getValidTemp(hhc_trim($value[$i]))
+                            : $self->_getValidStatus(hhc_trim($value[$i]));
 
                         if (!defined($time_)) {
                             $self->_log(1,"_convertScheduleStringToJSON: Time '".$time[$i]."' is not valid");

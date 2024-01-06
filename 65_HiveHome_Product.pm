@@ -6,8 +6,8 @@ use warnings;
 use AttrTemplate;
 use SetExtensions;
 use Data::Dumper;
+use HiveHomeCommon;
 
-sub trim($) { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
 sub	toString($) { my ($parameter) = @_; if (defined($parameter)) { return $parameter; } else { return '<undefined>'; } };
 
 
@@ -26,8 +26,8 @@ sub HiveHome_Product_Initialize($)
 	$hash->{AttrFn}		= "HiveHome_Product_Attr";
 	$hash->{NotifyFn}	= "HiveHome_Product_Notify";
 
-    my $templist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( HiveHome_MinTemperature()*2..HiveHome_MaxTemperature()*2 ) );
-    my $tempoffsetlist = join(",",map { HiveHome_SerializeTemperature($_/2) }  ( -3*2..3*2 ) );
+    my $templist = join(",",map { hhc_SerializeTemperature($_/2) }  ( hhc_MinTemperature()*2..hhc_MaxTemperature()*2 ) );
+    my $tempoffsetlist = join(",",map { hhc_SerializeTemperature($_/2) }  ( -3*2..3*2 ) );
 
 	$hash->{Match}		= "^HiveHome_Product";			# The start of the Dispatch/Parse message must contain this string to match this device.
 	$hash->{AttrList}	= "IODev " 
@@ -39,6 +39,7 @@ sub HiveHome_Product_Initialize($)
 						. "controlZoneHeating:1,0 "
 						. "controlZoneHeatingMinNumberOfTRVs "
 						. "setScheduleFromTRVs:1,0 "
+						. "forceUpdateSchedule:True,False "
 						. $readingFnAttributes;
 
 	Log(5, "HiveHome_Product_Initialize: exit");
@@ -209,68 +210,82 @@ sub HiveHome_Product_Attr($$$$)
     my ( $cmd, $name, $attrName, $attrVal ) = @_;
     my $hash = $defs{$name};
 
-	Log(5, "HiveHome_Product_Attr: enter");
+	Log(4, "HiveHome_Product_Attr: Enter  - Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
 
-	Log(4, "HiveHome_Product_Attr: Cmd: ${cmd}, Attribute: ${attrName}, value: ${attrVal}");
-
-	if ($attrName eq 'autoAlias' && $init_done) 
-	{
-        if ($cmd eq 'set')
-		{
-			if ($attrVal eq '1')
-			{
+	if ($attrName eq 'autoAlias' && $init_done) {
+        if ($cmd eq 'set') {
+			if ($attrVal eq '1') {
 				my $alias = AttrVal($name, 'alias', undef);
-				if (!defined($alias) || ($alias ne $hash->{name}." ".$hash->{productType}))
-				{
+				if (!defined($alias) || ($alias ne $hash->{name}." ".$hash->{productType})) {
 					fhem("attr ${name} alias ".$hash->{name}." ".$hash->{productType});
 				}
-			}
-			else
-			{
+			} else {
 				fhem("deleteattr ${name} alias");
 			}
-		}
-		elsif ($cmd eq 'del')
-		{
+		} elsif ($cmd eq 'del') {
 			# If the autoAlias attribute's previous value was 1, remove the alias.
 			my $attVal = AttrVal($name, $attrName, undef);
-			if (defined($attVal) && 0 != $attVal)
-			{
+			if (defined($attVal) && 0 != $attVal) {
 				fhem("deleteattr ${name} alias");
 			}	
 		}
-	}
-	elsif ($attrName eq 'boostDuration')
-	{
+	} elsif ($attrName eq 'boostDuration') {
 		# TODO - Verify parameter
-#        if (HiveHome_IsValidNumber($attrVal))
-	}
-	elsif ($attrName eq 'boostTemperature')
-	{
+#        if (hhc_IsValidDuration($attrVal))
+	} elsif ($attrName eq 'boostTemperature') {
 		# TODO - Verify parameter
-#        if (HiveHome_IsValidTemperature($attrVal))
-	}
-	elsif ($attrName eq 'temperateOffset')
-	{
-		# TODO: Verify parameter...
-		# TODO: Only valid for a heating type product.
-		# TODO: Update existing settings. Can wait until the next refresh for details displayed to the screen, 
-		# 		but the current temperature needs to be corrected against the offset.
-	}
-	elsif ($attrName eq 'setScheduleFromTRVs')
-	{
+#        if (hhc_IsValidTemperature($attrVal))
+	} elsif ($attrName eq 'temperatureOffset') {
+		Log(4, "HiveHome_Product_Attr(${name} - $attrName): Entry!");
+
+		if (!$init_done) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Initialisation not complete!");
+		} elsif (!defined($hash->{STATE}) || lc($hash->{STATE}) eq 'disconnected') {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Device disconnected!");			
+		} elsif (!hhc_IsValidTemperatureOffset($attrVal)) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be a valid temperature number!");
+			return "Invalid value provided ${attrVal}, must be a valid temperature number!";
+		} else {
+			# Test to see if the set temperatureOffset has been modified
+			my $curTempOffset = AttrVal($name, 'temperatureOffset', 0);
+			if ($curTempOffset != $attrVal) {
+				# Push the entire week schedule onto the device to force the schedule temperatures to be updated with the new offset.
+				my $weekProfileCmdString = undef;
+				my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
+				my %dayHash = (monday => "mon", tuesday => "tue", wednesday => "wed", thursday => "thu", friday => "fri", saturday => "sat", sunday => "sun");
+				foreach my $day (@daysofweek) 
+				{
+					my $dayProfile = HiveHome_ConvertUIDayProfileStringToCmdString($hash->{"WeekProfile_".$day}, $attrVal);
+					$dayProfile =~ s/[.]0//ig;
+					$weekProfileCmdString .= $dayHash{$day}.' '.$dayProfile.' ';
+				}
+				Log(4, "HiveHome_Product_Attr(${name} - $attrName): set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}!");
+				# Apply the new week schedule
+				fhem("set ${name} weekprofile IgnoreTemperatureOffset Force ${weekProfileCmdString}");
+				# TODO: Problem, the new attribute is not set before this is called!
+				#		The schedule will not be updated as it will not have changed.
+				#		Test to see if the 'IgnoreTemperatureOffset' argument and the modified command string works around this issue.
+			}
+		}
+		Log(4, "HiveHome_Product_Attr(${name} - $attrName): Exit!");
+	} elsif ($attrName eq 'setScheduleFromTRVs') {
 		# TODO:
+	} elsif ($attrName eq 'forceUpdateSchedule') {
+		if (!(lc($attrVal) eq 'true' || lc($attrVal) eq 'false')) {
+			Log(2, "HiveHome_Product_Attr(${name} - $attrName): Invalid value provided ${attrVal}, must be either 'true' or 'false'!");
+			return "Invalid value provided ${attrVal},  must be either 'true' or 'false'!";
+		}
 	}
 
-	Log(5, "HiveHome_Product_Attr: exit");
-    return undef;		
+	Log(4, "HiveHome_Product_Attr: exit");
+	return undef;		
 }
 
 sub HiveHome_Product_Set($$$$)
 {
 	my ($hash,$name,$cmd,@args) = @_;
 
-	Log(5, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
+	Log(4, "HiveHome_Product_Set: enter - Name: ${name}, Cmd: ${cmd}");
 
 	my @argsCopy = @args;
 
@@ -279,7 +294,7 @@ sub HiveHome_Product_Set($$$$)
 
 	my $ret = IOWrite($hash, @argsCopy);
 
-	Log(5, "HiveHome_Product_Set: exit");
+	Log(4, "HiveHome_Product_Set: exit");
 
 	if (defined($ret))
 	{
@@ -347,48 +362,50 @@ sub HiveHome_Product_Parse($$$)
 	# Get the hash of the Hive device object
 	my $shash = $modules{HiveHome_Product}{defptr}{$id};
 
-	if (lc($node->{id}) eq lc($id))
-	{
-        $shash->{productType}		= $node->{type};
-        $shash->{name}				= $node->{name};
-        $shash->{parent}			= $node->{parent};
+	if (lc($node->{id}) eq lc($id)) {
+        	$shash->{productType}		= $node->{type};
+        	$shash->{name}				= $node->{name};
+        	$shash->{parent}			= $node->{parent};
 
 		# Test to see if the product is online.... If online only some of the read values are returned.
-		if (!$node->{readings}->{online})
-		{
+		if (!exists($node->{readings}) || !exists($node->{readings}->{online})) {
 			readingsBeginUpdate($shash);
-			readingsBulkUpdateIfChanged($shash, "online", $node->{readings}->{online} ? 'Online' : 'Offline');
+			readingsBulkUpdateIfChanged($shash, "online", 'Offline');
 			readingsEndUpdate($shash, 1);
-		}
-		else
-		{
+		} else {
 			$shash->{pmz}				= $node->{internals}->{pmz};
-	        $shash->{deviceId}			= $node->{deviceId};
+		        $shash->{deviceId}			= $node->{deviceId};
 
 			if ($node->{deviceType})
 			{
-	        	$shash->{deviceType}		= $node->{deviceType};
+	        		$shash->{deviceType}		= $node->{deviceType};
 			}
+
+			my $tempOffset = AttrVal($shash->{NAME}, 'temperatureOffset', 0);
 
 			# This is a hash that needs breaking down...
 			my $weekProfileChanged = undef;
 			my @daysofweek = qw(monday tuesday wednesday thursday friday saturday sunday);
-			foreach my $day (@daysofweek) 
-			{
-				# TODO: need to ensure the schedule temperatures are offset.
-				if (!defined($node->{internals}->{schedule}) || !defined($node->{internals}->{schedule}->{$day}) || "" ne $node->{internals}->{schedule}->{$day})
-				{
-					if (lc(InternalVal($shash->{NAME}, "WeekProfile_${day}", '')) ne lc($node->{internals}->{schedule}->{$day}))
-					{
+			my $dayToday = hhc_GetWeekDay(undef);
+			foreach my $day (@daysofweek) {
+				if (!defined($node->{internals}->{schedule}) || !defined($node->{internals}->{schedule}->{$day}) || "" ne $node->{internals}->{schedule}->{$day}) {
+					my $daySchedule = $node->{internals}->{schedule}->{$day};
+					if (defined($tempOffset) && $tempOffset != 0) {
+						# If a temperatureOffset attribute has been applied to this heating component and the offset isnt '0'.
+						# Then remove the offset from the temperature values read from the component.
+						Log(5, "HiveHome_Product_Parse: Removing temperature offset ${tempOffset} from schedule - ${daySchedule}!");
+						$daySchedule = hhc_removeTemperatureOffsetFromSchedule($tempOffset, $daySchedule);
+						Log(5, "HiveHome_Product_Parse: New schedule ${daySchedule}!");
+					}
+
+					if (lc(InternalVal($shash->{NAME}, "WeekProfile_${day}", '')) ne lc($daySchedule)) {
 						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - '".InternalVal($shash->{NAME}, "WeekProfile_${day}", '')."'");
-						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - '".$node->{internals}->{schedule}->{$day}."'");
+						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - '".$daySchedule."'");
 						Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - modified");
-						SetInternal($shash, "WeekProfile_${day}", $node->{internals}->{schedule}->{$day});
+						SetInternal($shash, "WeekProfile_${day}", $daySchedule);
 						$weekProfileChanged = 1;
 					}
-				}
-				else
-				{
+				} else {
 					Log(2, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile_${day} - Empty weekday configuration!");
 				}
 			}
@@ -397,6 +414,7 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'frostProtection',	$node->{internals}->{frostProtection});
 			SetInternal($shash, 'scheduleOverride', $node->{internals}->{scheduleOverride});
 			SetInternal($shash, 'zone', 			$node->{internals}->{zone});
+			SetInternal($shash, 'zoneName', 		$node->{internals}->{zoneName});
 			SetInternal($shash, 'maxEvents', 		$node->{internals}->{maxEvents});
 			SetInternal($shash, 'boost', 			$node->{internals}->{boost});
 			SetInternal($shash, 'previousMode', 	$node->{internals}->{previousMode});
@@ -417,25 +435,20 @@ sub HiveHome_Product_Parse($$$)
 			SetInternal($shash, 'mountingMode',		$node->{internals}->{mountingMode});
 			SetInternal($shash, 'eui64',			$node->{internals}->{eui64});
 
-			if (defined($node->{internals}->{holidayMode}))
-			{
+			if (defined($node->{internals}->{holidayMode})) {
 				SetInternal($shash, 'holidayModeEnabled',	$node->{internals}->{holidayMode}->{enabled} ? 'true' : 'false');
 				SetInternal($shash, 'holidayModeActive',	$node->{internals}->{holidayMode}->{active} ? 'true' : 'false');
 
-				if ($node->{internals}->{holidayMode}->{enabled})
-				{
+				if ($node->{internals}->{holidayMode}->{enabled}) {
 					# Holiday mode is enabled...
 					SetInternal($shash, 'holidayModeDetails',	"Start: ".$node->{internals}->{holidayMode}->{start}." End: ".$node->{internals}->{holidayMode}->{end}." Temp: ".$node->{internals}->{holidayMode}->{temperature}."°C");
-				}
-				else
-				{
+				} else {
 					# Ensure Holiday details are removed from the display.
 					SetInternal($shash, 'holidayModeDetails',	undef);
 				}
 			}
 
-			if (defined($node->{internals}->{trvs}))
-			{
+			if (defined($node->{internals}->{trvs})) {
 	#            $shash->{trvs}		= $node->{internals}->{trvs};
 	#			SetInternal($shash, 'trvs', $node->{internals}->{trvs});
 	#			Log(3, "HiveHome_Product_Parse(".$shash->{NAME}."): TRVs - ".Dumper($shash->{trvs}));
@@ -443,8 +456,7 @@ sub HiveHome_Product_Parse($$$)
 
 			SetAttribute($shash, 'capabilities',	$node->{attr}->{capabilities});
 
-			# Offset the target temperature read from device
-			my $target = $node->{readings}->{target};
+			my $target = hhc_SubOffestTemperature($node->{readings}->{target}, $tempOffset);
 
 			readingsBeginUpdate($shash);
 
@@ -454,49 +466,36 @@ sub HiveHome_Product_Parse($$$)
 			readingsBulkUpdateIfChanged($shash, "online", $node->{readings}->{online} ? 'Online' : 'Offline');
 
 
-			if (defined($node->{readings}->{firmwareVersion})) 
-			{
+			if (defined($node->{readings}->{firmwareVersion})) {
 				readingsBulkUpdateIfChanged($shash, 'firmwareVersion',	$node->{readings}->{firmwareVersion});
 			}
 
-			if (defined($node->{readings}->{temperature})) 
-			{
+			if (defined($node->{readings}->{temperature})) {
 				readingsBulkUpdate($shash, "temperature", $node->{readings}->{temperature});
 			}
 
-			if (defined($target))
-			{
+			if (defined($target)) {
 				$myState = $target."°C";
-			}
-			else 
-			{
+			} else {
 				$myState = $node->{readings}->{online} ? 'Online' : 'Offline';
 			}
 
-			if (defined($node->{internals}->{calibrationStatus}))
-			{
-				if (lc($node->{internals}->{calibrationStatus}) eq 'calibrating')
-				{
+			if (defined($node->{internals}->{calibrationStatus})) {
+				if (lc($node->{internals}->{calibrationStatus}) eq 'calibrating') {
 					$myState .= ' (calibrating)';
-				}
-				elsif (lc($node->{internals}->{calibrationStatus}) eq 'needs calibrating')
-				{
+				} elsif (lc($node->{internals}->{calibrationStatus}) eq 'needs calibrating') {
 					$myState .= ' (needs calibrating)';
-				}
-				elsif (lc($node->{internals}->{calibrationStatus}) ne 'calibrated')
-				{
+				} elsif (lc($node->{internals}->{calibrationStatus}) ne 'calibrated') {
 					$myState .= ' (requires calibrating)';
 				}
 			}
 
-			if (defined($node->{readings}->{battery})) 
-			{
+			if (defined($node->{readings}->{battery})) {
 				readingsBulkUpdate($shash, "battery", $node->{readings}->{battery});
 				$myState .= ' (low battery)' if (int($node->{readings}->{battery}) <= 20);
 			}
 
-			if (defined($node->{readings}->{signal})) 
-			{
+			if (defined($node->{readings}->{signal})) {
 				readingsBulkUpdate($shash, "signal", $node->{readings}->{signal});
 				$myState .= ' (poor signal)' if (int($node->{readings}->{signal}) <= 20);
 			}
@@ -508,18 +507,20 @@ sub HiveHome_Product_Parse($$$)
 			readingsEndUpdate($shash, 1);
 
 
-			if (defined($weekProfileChanged))
-			{
+			if (defined($weekProfileChanged)) {
 				Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): WeekProfile has been modified");
 				# Call the parent (IODev) HiveHome_TRVScheduleModified function.
-				if (defined($shash->{IODev}{TRVScheduleModified}))
-				{
+				if (defined($shash->{IODev}{TRVScheduleModified})) {
 					Log(4, "HiveHome_Product_Parse(".$shash->{NAME}."): Calling HiveHome...");
 					($shash->{IODev}{TRVScheduleModified})->($shash->{IODev}, $shash);
 				}
-			}			
+			}
 		}
 		HiveHome_Product_SetAlias($shash, $shash->{NAME});
+	} else {
+		readingsBeginUpdate($shash);
+		readingsBulkUpdateIfChanged($shash, "online", 'Offline');
+		readingsEndUpdate($shash, 1);
 	}
 
 	$shash->{STATE} = $myState;
@@ -565,7 +566,7 @@ sub HiveHome_Product_Notify($$)
 #		Log(4, "HiveHome_Product_Notify(${ownFriendlyName}): - ${devFriendlyName}");
 
 		# If the TRV is in the same zone as the heating product
-		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
+#		if (defined($own_hash->{zone}) && defined($dev_hash->{zone}) && lc($own_hash->{zone}) eq lc($dev_hash->{zone}))
 		{
 			# If a zone Heating is being boosted then all the trvs in the same zone must also be boosted.
 			# When the heating reverts back to its original heating mode, the trvs must also revert back to their previous mode.
@@ -730,7 +731,10 @@ sub HiveHome_Product_Notify($$)
 		Cancels the currently configured holiday mode.
 		</li><br>	
 		<a name="weekProfile"></a>
-		<li><code>weekProfile &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;][ &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;]]</code><br><br>
+		<li><code>weekProfile [IgnoreTemperatureOffset|Force]  &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;][ &lt;day&gt; &lt;target&gt;,&lt;until&gt;[,&lt;target&gt;,&lt;until&gt;]]</code><br><br>
+			IgnoreTemperatureOffset and Force - Optional arguments that if required must be provided before the schedule. Either one or both can be provided with spaces between them in any order.<br>
+			IgnoreTemperatureOffset - will not apply the temperatureOffset (Attribute) value to each of the provided temperatures. This is only valid for heating items, not hotwater.<br>
+			Force - will tell the processor to apply the schedule even if it has not changed from the current schedule.
 			day - mon, tue, wed, thu, fri, sat, sun<br>
 			until - HH:MM. 24 hour clock starting at 00:00 to 23:59. Following untils must be later than the previous until<br>
 			target - ON/OFF (productType: hotwater)  temperature value (productType: heating and trvcontrol)<br>
@@ -738,6 +742,7 @@ sub HiveHome_Product_Notify($$)
 		Sets the devices schedule profile.<br>
 		E.g. 	<code>set name weekProfile Thu off,06:30,on,07:15,off,16:00,on,21:30,off</code><br>
 				<code>set name weekProfile Thu 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0 Fri 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0</code><br>
+				<code>set name weekProfile Force IgnoreTemperatureOffset Thu 15.0,05:30,20.0,08:30,19.0,15:00,20.0,23:00,18.0,23:55,15.0</code><br>
 		This will not modify the current profile for all unspecified days.
 		</li><br>	
 		<a name="childLock"></a>
@@ -788,6 +793,9 @@ sub HiveHome_Product_Notify($$)
 		When defined, the offset applied to the set temperature, either manual or scheduled.<br>
 		Can be any full or half number, posotive or nagative.<br>
 		The temparature offset will not go outside the allowed temperature range.</li><br>
+		<a name="forceUpdateSchedule"></a>
+		<li><code>forceUpdateSchedule</code><br><br>
+		When set to 'true' any command to set the schedule will be pushed to the product even if the current schedule matches the required schedule.</li><br>
 	</ul>	
 </ul>
 

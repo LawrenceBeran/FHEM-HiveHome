@@ -11,8 +11,14 @@ use List::Util qw(first);
 
 
 my $credentials_filename = 'credentials.json';
+
 my $username = 'XXXX';
 my $password = 'XXXX';
+
+my $deviceGroupKey  = undef;
+my $deviceKey       = undef;
+my $devicePassword  = undef;
+
 
 ### Load credentials from file
 my $credentialsString = do {
@@ -26,34 +32,19 @@ if (defined($credentialsString))
     my $credentials = decode_json($credentialsString);
     $username = $credentials->{username};
     $password = $credentials->{password};
-}
 
-my $token_filename = 'HiveHome-token.json';
-my $token = undef;
-my $refreshToken = undef;
-my $accessToken = undef;
-my $deviceKey = undef;
-
-### Load the previous token from file
-my $tokenString = do {
-    open(my $fhIn, "<", $token_filename);
-    local $/;
-    <$fhIn>
-};
-
-if (defined($tokenString))
-{
-    my $tokens = decode_json($tokenString);
-    $token = $tokens->{token};
-    $refreshToken = $tokens->{refreshToken};
-    $accessToken = $tokens->{accessToken};
-    $deviceKey = $tokens->{deviceKey};
+    if (defined($credentials->{deviceGroupKey}))
+    {
+        $deviceGroupKey = $credentials->{deviceGroupKey};
+        $deviceKey      = $credentials->{deviceKey};
+        $devicePassword = $credentials->{devicePassword};
+    }    
 }
 
 ### Connect to the HiveHomeAPI
-my $hiveHomeClient = HiveHomeInterface->new(userName => $username, password => $password, token => $token,
-                                        refreshToken => $refreshToken, accessToken => $accessToken, deviceKey => $deviceKey);
+my $hiveHomeClient = HiveHomeInterface->new(userName => $username, password => $password, deviceGroupKey => $deviceGroupKey, deviceKey => $deviceKey, devicePassword => $devicePassword);
 
+my $loginResults = $hiveHomeClient->loginDevice();
 
 
 my $tests = {
@@ -74,11 +65,17 @@ my $tests = {
 # Test getting devices and products calls.
 
 my @devices = $hiveHomeClient->getDevices();
-# print("Devices: ".Dumper(@devices)."\n");
+### Save the devices
+#open(my $fhOutDevices, ">", "devices.json");
+#print($fhOutDevices encode_json(\@devices));
+#close($fhOutDevices);  
+
 
 my @products = $hiveHomeClient->getProducts();
-print("Products: ".Dumper(@products)."\n");
-
+### Save the products
+#open(my $fhOutProducts, ">", "products.json");
+#print($fhOutProducts encode_json(\@products));
+#close($fhOutProducts);  
 
 # Get found products that can be tested (currently only supports single zone and single trvcontrol)
 my ($heatingItem) = first { 'heating' eq lc($_->{type}) } @products;
@@ -324,11 +321,11 @@ if (defined($tests->{trvSchedule}))
 ################################################################################################################
 
 ### Get the latest used token
-$token = $hiveHomeClient->getToken();
+#$token = $hiveHomeClient->getToken();
 ### Save the previous token to file
-open(my $fhOut, ">", $token_filename);
-print($fhOut encode_json($token));
-close($fhOut);  
+#open(my $fhOut, ">", $token_filename);
+#print($fhOut encode_json($token));
+#close($fhOut);  
 
 
 
@@ -356,6 +353,9 @@ sub PrintCurrentHolidayMode {
 
 sub Log3
 {
+    my ( $self, $loglevel, $text ) = @_;
+
+    print($text);
     # This subroutine mimics the interface of the FHEM defined Log so that the test does not crash.
     my $var = '';
 }

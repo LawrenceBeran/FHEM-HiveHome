@@ -5,11 +5,15 @@ use lib '.';
 use AWSCognitoIdp;
 use JSON;
 use Data::Dumper;
-use REST::Client;
+
 
 my $credentials_filename = 'credentials.json';
 my $username = 'XXXX';
 my $password = 'XXXX';
+
+my $deviceGroupKey  = undef;
+my $deviceKey       = undef;
+my $devicePassword  = undef;
 
 
 ### Load credentials from file
@@ -24,56 +28,79 @@ if (defined($credentialsString))
     my $credentials = decode_json($credentialsString);
     $username = $credentials->{username};
     $password = $credentials->{password};
-}
 
-
-my $loginClient = REST::Client->new();
-
-
-
-my $ua = LWP::UserAgent->new;
-my $url = 'https://sso.hivehome.com/';
-
-
-$loginClient->GET($url);
-if (200 != $loginClient->responseCode()) {
-
-} 
-
-$loginClient->responseContent() =~ m/<script>(.*?)<\/script>/;
-my $scriptData = '{"'.$1.'}';
-$scriptData =~ s/,/,"/ig;
-$scriptData =~ s/=/":/ig;
-$scriptData =~ s/window.//ig;
-print($scriptData);
-
-my $data = decode_json($scriptData);
-
-print(Dumper($data));
-
-my ($region, $poolId) = (split('_', $data->{HiveSSOPoolId}))[0,1];
-my $cliid = $data->{HiveSSOPublicCognitoClientId};
-
-
-my $awsAuth = AWSCognitoIdp->new(userName => $username, password => $password, region => $region, 
-                                poolId => $poolId, clientId => $cliid);
-my $authResult = $awsAuth->loginSRP();
-
-
-if ($authResult) {
-
-
-    my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
-
-    if (!$refreshAuthResult) {
-
-    } else {
-        print(Dumper($refreshAuthResult));
+    if (defined($credentials->{deviceGroupKey}))
+    {
+        $deviceGroupKey = $credentials->{deviceGroupKey};
+        $deviceKey      = $credentials->{deviceKey};
+        $devicePassword = $credentials->{devicePassword};
     }
-
 }
 
+#$deviceGroupKey = undef;
+#$deviceKey      = undef;
+#$devicePassword = undef;
 
+my $awsAuth = AWSCognitoIdp->new(userName => $username, password => $password, deviceGroupKey => $deviceGroupKey, deviceKey => $deviceKey, devicePassword => $devicePassword);
+
+if (defined($deviceGroupKey)) {
+    
+    my $loginResult = $awsAuth->loginDevice();
+
+
+    my $refreshTokens = $awsAuth->refreshToken();
+
+} else {
+
+
+    my $loginResult = $awsAuth->loginSRP();
+    if ($loginResult) {
+
+        # If login requires 2FA
+        if (uc($loginResult->{ChallengeName}) eq 'SMS_MFA') {
+
+            # The code will be sent, probably via SMS...
+            print("\n\nEnter the code?\n");
+            my $code = <>;
+            chomp($code);
+            $loginResult = $awsAuth->loginSMS2FA($code, $loginResult->{Session});
+        }
+
+        my $authResult = $loginResult->{AuthenticationResult};
+        if ($authResult) {
+
+            my $confDevices = $awsAuth->confirmDevice($authResult);
+
+            print(Dumper($authResult));
+            print(Dumper($confDevices));
+
+            ($deviceGroupKey, $deviceKey, $devicePassword) = $awsAuth->getDeviceData();
+
+            $authResult->{RefreshToken};
+            $authResult->{AccessToken};
+            $authResult->{TokenType};                           # Bearer
+            $authResult->{IdToken};
+            $authResult->{ExpiresIn};                           # Number of seconds till token expires
+            $authResult->{NewDeviceMetadata}->{DeviceKey};
+            $authResult->{NewDeviceMetadata}->{DeviceGroupKey};
+
+##            my $awsAuth2 = AWSCognitoIdp->new(userName => $username, password => $password, deviceGroupKey => $deviceGroupKey, deviceKey => $deviceKey, devicePassword => $devicePassword);
+##            my $loginResult2 = $awsAuth->loginDevice();
+
+#            my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
+
+#            my $refreshAuthResult = $awsAuth->refreshToken($authResult->{RefreshToken}, $authResult->{NewDeviceMetadata}->{DeviceKey});
+
+#            if (!$refreshAuthResult) {
+        
+#            } else {
+#                print(Dumper($refreshAuthResult));
+#            }
+
+
+        }
+    }
+}
 
 sub Log3($$$)
 {
