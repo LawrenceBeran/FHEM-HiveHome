@@ -363,22 +363,22 @@ sub HiveHome_Product_Parse($$$)
 	my $shash = $modules{HiveHome_Product}{defptr}{$id};
 
 	if (lc($node->{id}) eq lc($id)) {
-        $shash->{productType}		= $node->{type};
-        $shash->{name}				= $node->{name};
-        $shash->{parent}			= $node->{parent};
+        	$shash->{productType}		= $node->{type};
+        	$shash->{name}				= $node->{name};
+        	$shash->{parent}			= $node->{parent};
 
 		# Test to see if the product is online.... If online only some of the read values are returned.
-		if (!$node->{readings}->{online}) {
+		if (!exists($node->{readings}) || !exists($node->{readings}->{online})) {
 			readingsBeginUpdate($shash);
 			readingsBulkUpdateIfChanged($shash, "online", 'Offline');
 			readingsEndUpdate($shash, 1);
 		} else {
 			$shash->{pmz}				= $node->{internals}->{pmz};
-	        $shash->{deviceId}			= $node->{deviceId};
+		        $shash->{deviceId}			= $node->{deviceId};
 
 			if ($node->{deviceType})
 			{
-	        	$shash->{deviceType}		= $node->{deviceType};
+	        		$shash->{deviceType}		= $node->{deviceType};
 			}
 
 			my $tempOffset = AttrVal($shash->{NAME}, 'temperatureOffset', 0);
@@ -522,6 +522,7 @@ sub HiveHome_Product_Parse($$$)
 		readingsBulkUpdateIfChanged($shash, "online", 'Offline');
 		readingsEndUpdate($shash, 1);
 	}
+
 	$shash->{STATE} = $myState;
 
 	Log(5, "HiveHome_Product_Parse(".$shash->{NAME}."): exit");
